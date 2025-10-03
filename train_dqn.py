@@ -50,9 +50,9 @@ def train_dqn():
         "CnnPolicy",
         env,
         learning_rate=1e-4,
-        buffer_size=50000,              # Reduced for memory
+        buffer_size=1e6,              # Reduced for memory
         learning_starts=50000,
-        batch_size=256,
+        batch_size=64,
         tau=1.0,
         gamma=0.99,
         train_freq=4,
