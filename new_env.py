@@ -160,7 +160,7 @@ def train_dqn():
         "CnnPolicy",
         env,
         learning_rate=1e-4,
-        buffer_size=200000,
+        buffer_size=100000,
         learning_starts=50000,
         batch_size=64,
         tau=1.0,
@@ -200,7 +200,7 @@ def train_dqn():
     start_time = time.time()
 
     model.learn(
-        total_timesteps=1_000_000,
+        total_timesteps=750_000,
         callback=[checkpoint_callback, eval_callback],
         log_interval=10,
         progress_bar=True
