@@ -50,8 +50,8 @@ def train_dqn():
         "CnnPolicy",
         env,
         learning_rate=1e-4,
-        buffer_size=300000,              # Reduced for memory
-        learning_starts=50000,
+        buffer_size=100000,              # Reduced for memory
+        learning_starts=10000,
         batch_size=64,
         tau=1.0,
         gamma=0.99,
@@ -91,7 +91,7 @@ def train_dqn():
     
     # Train the agent
     model.learn(
-        total_timesteps=1000000,
+        total_timesteps=900000,
         callback=[checkpoint_callback, eval_callback],
         log_interval=10,
         progress_bar=True
