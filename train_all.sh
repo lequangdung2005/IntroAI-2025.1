@@ -16,12 +16,7 @@ echo "Total estimated time: 10-15 hours (with GPU)"
 echo "=========================================="
 echo ""
 
-read -p "Continue? (y/n) " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]
-then
-    exit 1
-fi
+
 
 # Train DQN
 echo ""
