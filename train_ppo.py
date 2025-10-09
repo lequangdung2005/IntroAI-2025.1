@@ -51,7 +51,7 @@ def train_ppo():
         env,
         learning_rate=2.5e-4,
         n_steps=128,                    # Steps per update per environment
-        batch_size=256,                 # Minibatch size
+        batch_size=128,                 # Minibatch size
         n_epochs=4,                     # Number of epochs per update
         gamma=0.99,
         gae_lambda=0.95,
@@ -90,7 +90,7 @@ def train_ppo():
     
     # Train the agent
     model.learn(
-        total_timesteps=1000000,
+        total_timesteps=900000,
         callback=[checkpoint_callback, eval_callback],
         log_interval=10,
         progress_bar=True
