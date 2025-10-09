@@ -89,7 +89,7 @@ def train_a2c():
     
     # Train the agent
     model.learn(
-        total_timesteps=1000000,
+        total_timesteps=900000,
         callback=[checkpoint_callback, eval_callback],
         log_interval=10,
         progress_bar=True
