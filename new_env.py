@@ -25,18 +25,6 @@ os.makedirs("models/dqn", exist_ok=True)
 os.makedirs("logs/dqn", exist_ok=True)
 
 
-# ======= Wrapper đảm bảo image là uint8 trong [0,255] =======
-class FixImageSpace(gym.ObservationWrapper):
-    def __init__(self, env):
-        super().__init__(env)
-        obs_space = env.observation_space
-        self.observation_space = gym.spaces.Box( low=0, high=255, shape=obs_space.shape, dtype=np.uint8 )
-
-    def observation(self, obs):
-        obs = np.clip(obs, 0, 255)
-        return obs.astype(np.uint8)
-
-
 # ======= Reward shaping wrapper (không phụ thuộc AtariWrapper) =======
 class RewardShapingWrapper(gym.Wrapper):
     """
@@ -51,6 +39,7 @@ class RewardShapingWrapper(gym.Wrapper):
             shape=(210, 160, 3),  # ảnh gốc Atari RGB
             dtype=np.uint8
         )
+        self.step_count = 0  # Biến đếm số bước
 
     def _get_inner_ocatari(self):
         """Truy vào tận OCAtari gốc (bỏ qua các wrapper)."""
@@ -61,10 +50,8 @@ class RewardShapingWrapper(gym.Wrapper):
 
     def _get_rgb_frame(self):
         """Trả về frame RGB gốc để DQN học."""
-        # OCAtari luôn có hàm này trong mode=vision hoặc mode=both
-        if hasattr(self.oc_env, "get_screen_rgb"):
-            frame = self.oc_env.get_screen_rgb()
-        elif hasattr(self.oc_env, "getScreenRGB"):
+        # OCAtari luôn có hàm này trong mode=vision
+        if hasattr(self.oc_env, "getScreenRGB"):
             frame = self.oc_env.getScreenRGB()
         else:
             frame = np.zeros((210, 160, 3), dtype=np.uint8)
@@ -91,7 +78,6 @@ class RewardShapingWrapper(gym.Wrapper):
             bonus_powerpill_reward = 0.0
             bonus_eating_ghost_reward = 0.0
             penaty_nearing_ghost_reward = 0.0
-            shaping_reward = 0.0
             is_powered_up = self.is_powered_up()
 
             # thưởng nếu gần PowerPill
@@ -100,7 +86,6 @@ class RewardShapingWrapper(gym.Wrapper):
                 dists = [np.linalg.norm([px - o.x, py - o.y]) for o in powerpills]
                 dist = min(dists)
                 bonus_powerpill_reward += 10.0 / (dist + 1)
-                shaping_reward += 10.0 / (dist + 1)
 
             # phạt nếu gần Ghost
             ghosts = [o for o in objects if getattr(o, "category", None) == "Ghost"]
@@ -110,12 +95,13 @@ class RewardShapingWrapper(gym.Wrapper):
                 if dist < 10:
                     if is_powered_up:
                         bonus_eating_ghost_reward += 10.0 / (dist + 1)
-                        shaping_reward += 10.0 / (dist + 1)
                     else:
                         penaty_nearing_ghost_reward -= 10.0 / (dist + 1)
-                        shaping_reward -= 10.0 / (dist + 1)
-            with open("shaping_reward_log.txt", "a") as f:
-                f.write(f"is_powered_up: {is_powered_up}, base_reward: {reward:.3f}, total_shaping_reward: {shaping_reward:.3f}, bonus_powerpill_reward: {bonus_powerpill_reward:.3f}, bonus_eating_ghost_reward: {bonus_eating_ghost_reward:.3f}, penaty_nearing_ghost_reward: {penaty_nearing_ghost_reward:.3f}\n")
+            # Chỉ ghi log mỗi 100 bước
+            self.step_count += 1
+            if self.step_count % 100 == 0:
+                with open("shaping_reward_log.txt", "a") as f:
+                    f.write(f"step: {self.step_count}, is_powered_up: {is_powered_up}, base_reward: {reward:.3f}, bonus_powerpill_reward: {bonus_powerpill_reward:.3f}, bonus_eating_ghost_reward: {bonus_eating_ghost_reward:.3f}, penaty_nearing_ghost_reward: {penaty_nearing_ghost_reward:.3f}\n")
 
         # === DQN chỉ nhận ảnh ===
         rgb_frame = self._get_rgb_frame()
@@ -124,17 +110,11 @@ class RewardShapingWrapper(gym.Wrapper):
 
 # ======= Tạo env (không dùng AtariWrapper) =======
 def make_env():
-    # Use mode="vision" (or "both" if you want objects + vision) -- here we use vision
     env = OCAtari("ALE/MsPacman-v5",
                   render_mode="rgb_array",
-                  mode="both")   # change to "both" if you need info objects in info
-    # If you want reward shaping, wrap here:
+                  mode="vision")
     env = RewardShapingWrapper(env)
-    # Ensure observation dtype is uint8 in [0,255]
-    env = FixImageSpace(env)
     env = Monitor(env)
-    # print("Observation space:", env.observation_space)
-    # print("Observation dtype:", env.observation_space.dtype)
     return env
 
 
@@ -161,7 +141,7 @@ def train_dqn():
         env,
         learning_rate=1e-4,
         buffer_size=100000,
-        learning_starts=10000,
+        learning_starts=50000,
         batch_size=64,
         tau=1.0,
         gamma=0.99,
