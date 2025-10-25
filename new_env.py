@@ -152,7 +152,7 @@ def train_a2c():
     eval_callback = EvalCallback(eval_env, best_model_save_path="./models/a2c/best/", log_path="./logs/a2c/eval/", eval_freq=10000, n_eval_episodes=5, deterministic=True, render=False)
 
     start_time = time.time()
-    model.learn(total_timesteps=500_000, callback=[checkpoint_callback, eval_callback], log_interval=10)
+    model.learn(total_timesteps=1_000_000, callback=[checkpoint_callback, eval_callback], log_interval=10)
     training_time = time.time() - start_time
 
     final_model_path = "models/a2c/mspacman_a2c_final.zip"
