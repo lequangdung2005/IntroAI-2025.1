@@ -7,12 +7,15 @@ import ale_py
 import numpy as np
 import os
 import time
+import cv2
+from gymnasium import spaces
 
 from ocatari.core import OCAtari
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTransposeImage
 from stable_baselines3.common.monitor import Monitor
+from preprocess import PreprocessFrame
 
 # Register ALE environments
 gym.register_envs(ale_py)
@@ -22,54 +25,12 @@ os.makedirs("models/ppo", exist_ok=True)
 os.makedirs("logs/ppo", exist_ok=True)
 
 
-class OCAtariVisionWrapper(gym.Wrapper):
-    """
-    Wrapper to ensure OCAtari returns RGB frames instead of object representations.
-    Forces observation space to be (210, 160, 3) uint8 for CNN compatibility.
-    """
-    def __init__(self, env):
-        super().__init__(env)
-        self.oc_env = self._get_inner_ocatari()
-        # Override observation space to RGB frame
-        self.observation_space = gym.spaces.Box(
-            low=0, high=255,
-            shape=(210, 160, 3),
-            dtype=np.uint8
-        )
-
-    def _get_inner_ocatari(self):
-        """Get the actual OCAtari environment (unwrap all wrappers)."""
-        oc_env = self.env
-        while hasattr(oc_env, "env"):
-            oc_env = oc_env.env
-        return oc_env
-
-    def _get_rgb_frame(self):
-        """Return RGB frame for PPO to process."""
-        if hasattr(self.oc_env, "getScreenRGB"):
-            frame = self.oc_env.getScreenRGB()
-        else:
-            frame = np.zeros((210, 160, 3), dtype=np.uint8)
-        return frame
-
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        # Always return RGB frame
-        return self._get_rgb_frame(), info
-
-    def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        # Always return RGB frame
-        rgb_frame = self._get_rgb_frame()
-        return rgb_frame, reward, terminated, truncated, info
-
-
 def make_env():
     """Create and wrap the MsPacman environment using OCAtari"""
     env = OCAtari("ALE/MsPacman-v5",
                   render_mode="rgb_array",
                   mode="vision")
-    env = OCAtariVisionWrapper(env)
+    env = PreprocessFrame(env, width=84, height=84, force_image=True)
     env = Monitor(env)
     return env
 
@@ -159,4 +120,3 @@ def train_ppo():
 
 if __name__ == "__main__":
     train_ppo()
-

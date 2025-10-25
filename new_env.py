@@ -17,6 +17,7 @@ from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTran
 from stable_baselines3.common.monitor import Monitor
 from ocatari.vision.utils import find_objects
 from gymnasium import spaces
+from preprocess import PreprocessFrame
 
 # Đăng ký ALE environments
 gym.register_envs(ale_py)
@@ -34,9 +35,7 @@ class RewardShapingWrapper(gym.Wrapper):
     """
     def __init__(self, env):
         super().__init__(env)
-        self.oc_env = self._find_env_with_screen()
-        # observation_space will be overridden by PreprocessFrame later
-        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(210, 160, 3), dtype=np.uint8)
+        self.oc_env = self._get_inner_ocatari()
         self.step_count = 0
 
     def _get_inner_ocatari(self):
@@ -58,13 +57,9 @@ class RewardShapingWrapper(gym.Wrapper):
     def is_powered_up(self):
         """Phát hiện ghost đang ăn được (theo màu xanh)."""
         frame = self._get_rgb_frame()
-        eatable_ghosts = find_objects(frame, [66, 114, 194], min_distance=1)
+        # find_objects expects list of RGB tuples
+        eatable_ghosts = find_objects(frame, [(66, 114, 194)], min_distance=1)
         return bool(eatable_ghosts)
-
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        # luôn trả về frame ảnh cho DQN
-        return self._get_rgb_frame(), info
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
@@ -100,8 +95,7 @@ class RewardShapingWrapper(gym.Wrapper):
             if self.step_count % 50 == 0:
                 with open("shaping_reward_log.txt", "a") as f:
                     f.write(f"step: {self.step_count}, is_powered_up: {is_powered_up}, base_reward: {reward:.3f}, bonus_powerpill_reward: {bonus_powerpill_reward:.3f}, bonus_eating_ghost_reward: {bonus_eating_ghost_reward:.3f}, penaty_nearing_ghost_reward: {penaty_nearing_ghost_reward:.3f}\n")
-        rgb_frame = self._get_rgb_frame()
-        return rgb_frame, reward, terminated, truncated, info
+        return obs, reward, terminated, truncated, info
 
 
 # ======= Tạo env (không dùng AtariWrapper) =======
@@ -111,6 +105,8 @@ def make_env():
                   mode="vision")
     env = RewardShapingWrapper(env)
     env = Monitor(env)
+    # Preprocess as outermost wrapper (force because we requested vision)
+    env = PreprocessFrame(env, width=84, height=84, force_image=True)
     return env
 
 
