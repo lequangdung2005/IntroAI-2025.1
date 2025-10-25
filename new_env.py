@@ -152,7 +152,7 @@ def train_rainbow():
         exploration_final_eps=0.01,
         verbose=1,
         tensorboard_log="./logs/rainbow/",
-        device="auto"
+        device="cuda"
     )
 
     # Callbacks
