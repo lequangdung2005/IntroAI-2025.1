@@ -1,16 +1,17 @@
 """
-Train a DQN agent to play MsPacman using Stable Baselines3 + OCAtari
-DQN: Deep Q-Network - Value-based method
+Train an on-policy agent (A2C) to play MsPacman using Stable Baselines3 + OCAtari
+This file was converted from the previous DQN-based implementation to A2C to avoid
+large replay buffer memory usage on constrained platforms (e.g. Kaggle).
 """
 import gymnasium as gym
 import ale_py
 import numpy as np
 import os
 import time
+import cv2
 
 from ocatari.core import OCAtari
-from stable_baselines3 import DQN
-# removed AtariWrapper import - not compatible with OCAtari
+from stable_baselines3 import A2C
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTransposeImage
 from stable_baselines3.common.monitor import Monitor
@@ -21,25 +22,22 @@ from gymnasium import spaces
 gym.register_envs(ale_py)
 
 # Tạo thư mục lưu model và log
-os.makedirs("models/dqn", exist_ok=True)
-os.makedirs("logs/dqn", exist_ok=True)
+os.makedirs("models/a2c", exist_ok=True)
+os.makedirs("logs/a2c", exist_ok=True)
 
 
-# ======= Reward shaping wrapper (không phụ thuộc AtariWrapper) =======
+# ======= Reward shaping wrapper (fix tìm env có getScreenRGB) =======
 class RewardShapingWrapper(gym.Wrapper):
     """
-    Wrapper vừa làm reward shaping từ OCAtari objects,
-    vừa đảm bảo DQN chỉ nhận ảnh RGB (vision).
+    Reward shaping wrapper that searches the wrapper chain for an environment
+    providing getScreenRGB (OCAtari) and uses it to return RGB frames.
     """
     def __init__(self, env):
         super().__init__(env)
-        self.oc_env = self._get_inner_ocatari()
-        self.observation_space = gym.spaces.Box(
-            low=0, high=255,
-            shape=(210, 160, 3),  # ảnh gốc Atari RGB
-            dtype=np.uint8
-        )
-        self.step_count = 0  # Biến đếm số bước
+        self.oc_env = self._find_env_with_screen()
+        # observation_space will be overridden by PreprocessFrame later
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(210, 160, 3), dtype=np.uint8)
+        self.step_count = 0
 
     def _get_inner_ocatari(self):
         """Truy vào tận OCAtari gốc (bỏ qua các wrapper)."""
@@ -99,11 +97,9 @@ class RewardShapingWrapper(gym.Wrapper):
                         penaty_nearing_ghost_reward -= 10.0 / (dist + 1)
             # Chỉ ghi log mỗi 100 bước
             self.step_count += 1
-            if self.step_count % 100 == 0:
+            if self.step_count % 50 == 0:
                 with open("shaping_reward_log.txt", "a") as f:
                     f.write(f"step: {self.step_count}, is_powered_up: {is_powered_up}, base_reward: {reward:.3f}, bonus_powerpill_reward: {bonus_powerpill_reward:.3f}, bonus_eating_ghost_reward: {bonus_eating_ghost_reward:.3f}, penaty_nearing_ghost_reward: {penaty_nearing_ghost_reward:.3f}\n")
-
-        # === DQN chỉ nhận ảnh ===
         rgb_frame = self._get_rgb_frame()
         return rgb_frame, reward, terminated, truncated, info
 
@@ -118,88 +114,58 @@ def make_env():
     return env
 
 
-# ======= Train =======
-def train_dqn():
+def train_a2c():
+    """Train the A2C agent"""
     print("=" * 60)
-    print("Training DQN Agent for MsPacman with OCAtari")
+    print("Training A2C Agent for MsPacman with OCAtari")
     print("=" * 60)
+    print("Creating environment...")
 
     # Env chính
     env = DummyVecEnv([make_env])
     env = VecTransposeImage(env)   # chuyển (H,W,C) -> (C,H,W)
     env = VecFrameStack(env, n_stack=4)  # stack AFTER transpose
 
-    # Env eval
     eval_env = DummyVecEnv([make_env])
     eval_env = VecTransposeImage(eval_env)
     eval_env = VecFrameStack(eval_env, n_stack=4)
 
-    print("Initializing DQN agent...")
+    print("Initializing A2C agent...")
 
-    model = DQN(
+    # A2C hyperparameters optimized for Atari
+
+    model = A2C(
         "CnnPolicy",
         env,
-        learning_rate=1e-4,
-        buffer_size=100000,
-        learning_starts=50000,
-        batch_size=64,
-        tau=1.0,
+        learning_rate=7e-4,
+        n_steps=5,
         gamma=0.99,
-        train_freq=4,
-        gradient_steps=1,
-        target_update_interval=1000,
-        exploration_fraction=0.1,
-        exploration_initial_eps=1.0,
-        exploration_final_eps=0.01,
+        gae_lambda=1.0,
+        ent_coef=0.01,
+        vf_coef=0.5,
+        max_grad_norm=0.5,
+        rms_prop_eps=1e-5,
+        use_rms_prop=True,
+        normalize_advantage=False,
         verbose=1,
-        tensorboard_log="./logs/dqn/",
-        device="cuda"  # or "cpu" if you have trouble with MPS
+        tensorboard_log="./logs/a2c/",
+        device="auto"
     )
 
-    # Callbacks
-    checkpoint_callback = CheckpointCallback(
-        save_freq=50000,
-        save_path="./models/dqn/",
-        name_prefix="mspacman_dqn"
-    )
-
-    eval_callback = EvalCallback(
-        eval_env,
-        best_model_save_path="./models/dqn/best/",
-        log_path="./logs/dqn/eval/",
-        eval_freq=10000,
-        n_eval_episodes=5,
-        deterministic=True,
-        render=False
-    )
-
-    print("Starting training...")
-    print("Monitor progress: tensorboard --logdir=./logs/dqn/")
-    print("-" * 60)
+    checkpoint_callback = CheckpointCallback(save_freq=50000, save_path="./models/a2c/", name_prefix="mspacman_a2c")
+    eval_callback = EvalCallback(eval_env, best_model_save_path="./models/a2c/best/", log_path="./logs/a2c/eval/", eval_freq=10000, n_eval_episodes=5, deterministic=True, render=False)
 
     start_time = time.time()
-
-    model.learn(
-        total_timesteps=500_000,
-        callback=[checkpoint_callback, eval_callback],
-        log_interval=10,
-        progress_bar=True
-    )
-
+    model.learn(total_timesteps=500_000, callback=[checkpoint_callback, eval_callback], log_interval=10)
     training_time = time.time() - start_time
 
-    # Save final model
-    final_model_path = "models/dqn/mspacman_dqn_final.zip"
+    final_model_path = "models/a2c/mspacman_a2c_final.zip"
     model.save(final_model_path)
 
-    print("\n" + "=" * 60)
     print(f"Training complete! Time: {training_time/3600:.2f} hours")
     print(f"Final model saved to {final_model_path}")
-    print(f"Best model saved to models/dqn/best/")
-    print("=" * 60)
-
     return model
 
 
 if __name__ == "__main__":
-    train_dqn()
+    train_a2c()
