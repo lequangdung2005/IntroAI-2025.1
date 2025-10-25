@@ -8,7 +8,6 @@ import ale_py
 import numpy as np
 import os
 import time
-import cv2
 
 from ocatari.core import OCAtari
 from stable_baselines3 import A2C
@@ -16,7 +15,6 @@ from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTransposeImage
 from stable_baselines3.common.monitor import Monitor
 from ocatari.vision.utils import find_objects
-from gymnasium import spaces
 from preprocess import PreprocessFrame
 
 # Đăng ký ALE environments
@@ -70,7 +68,7 @@ class RewardShapingWrapper(gym.Wrapper):
             px, py = getattr(player, "x", 0), getattr(player, "y", 0)
             bonus_powerpill_reward = 0.0
             bonus_eating_ghost_reward = 0.0
-            penaty_nearing_ghost_reward = 0.0
+            penalty_nearing_ghost_reward = 0.0
             is_powered_up = self.is_powered_up()
 
             # thưởng nếu gần PowerPill
@@ -89,12 +87,12 @@ class RewardShapingWrapper(gym.Wrapper):
                     if is_powered_up:
                         bonus_eating_ghost_reward += 10.0 / (dist + 1)
                     else:
-                        penaty_nearing_ghost_reward -= 10.0 / (dist + 1)
+                        penalty_nearing_ghost_reward -= 10.0 / (dist + 1)
             # Chỉ ghi log mỗi 100 bước
             self.step_count += 1
             if self.step_count % 50 == 0:
                 with open("shaping_reward_log.txt", "a") as f:
-                    f.write(f"step: {self.step_count}, is_powered_up: {is_powered_up}, base_reward: {reward:.3f}, bonus_powerpill_reward: {bonus_powerpill_reward:.3f}, bonus_eating_ghost_reward: {bonus_eating_ghost_reward:.3f}, penaty_nearing_ghost_reward: {penaty_nearing_ghost_reward:.3f}\n")
+                    f.write(f"is_powered_up: {is_powered_up}, base_reward: {reward:.3f}, bonus_powerpill_reward: {bonus_powerpill_reward:.3f}, bonus_eating_ghost_reward: {bonus_eating_ghost_reward:.3f}, penalty_nearing_ghost_reward: {penalty_nearing_ghost_reward:.3f}\n")
         return obs, reward, terminated, truncated, info
 
 
