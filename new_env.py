@@ -1,6 +1,7 @@
 """
-Train a PPO agent to play MsPacman using Stable Baselines3 + OCAtari with reward shaping
-PPO: Proximal Policy Optimization - Policy-based method with reward logging
+Train a Rainbow DQN agent to play MsPacman using Stable Baselines3 + OCAtari with reward shaping
+Rainbow: Combines multiple DQN improvements (Double DQN, Dueling, Prioritized Experience Replay, etc.)
+Note: Rainbow is not directly available in Stable Baselines3, so we use sb3-contrib (QR-DQN)
 """
 import gymnasium as gym
 import ale_py
@@ -9,7 +10,14 @@ import os
 import time
 
 from ocatari.core import OCAtari
-from stable_baselines3 import PPO
+try:
+    from sb3_contrib import QRDQN  # Quantile Regression DQN (closest to Rainbow in SB3)
+except ImportError:
+    print("Warning: sb3-contrib not installed. Installing...")
+    print("Run: pip install sb3-contrib")
+    print("Using regular DQN as fallback")
+    from stable_baselines3 import DQN as QRDQN
+
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTransposeImage
 from stable_baselines3.common.monitor import Monitor
@@ -20,8 +28,8 @@ from preprocess import PreprocessFrame
 gym.register_envs(ale_py)
 
 # Tạo thư mục lưu model và log
-os.makedirs("models/ppo", exist_ok=True)
-os.makedirs("logs/ppo", exist_ok=True)
+os.makedirs("models/rainbow", exist_ok=True)
+os.makedirs("logs/rainbow", exist_ok=True)
 
 
 # ======= Reward shaping wrapper (fix tìm env có getScreenRGB) =======
@@ -106,15 +114,15 @@ def make_env():
     return env
 
 
-def train_ppo():
-    """Train the PPO agent"""
+def train_rainbow():
+    """Train the Rainbow (QR-DQN) agent"""
     print("=" * 60)
-    print("Training PPO Agent for MsPacman with OCAtari")
+    print("Training Rainbow/QR-DQN Agent for MsPacman with OCAtari")
     print("=" * 60)
     print("Creating environment...")
 
-    # Create vectorized environment (PPO works better with multiple parallel envs)
-    env = DummyVecEnv([make_env for _ in range(4)])  # 4 parallel environments
+    # Create vectorized environment (DQN uses single environment)
+    env = DummyVecEnv([make_env])  # Single environment for DQN
     env = VecTransposeImage(env)  # Transpose (H,W,C) -> (C,H,W) for CNN
     env = VecFrameStack(env, n_stack=4)
 
@@ -123,39 +131,41 @@ def train_ppo():
     eval_env = VecTransposeImage(eval_env)
     eval_env = VecFrameStack(eval_env, n_stack=4)
 
-    print("Initializing PPO agent...")
+    print("Initializing Rainbow/QR-DQN agent...")
 
-    # PPO hyperparameters optimized for Atari
-    model = PPO(
+    # Rainbow (QR-DQN) hyperparameters optimized for Atari
+    # QR-DQN uses quantile regression for better value estimation
+    model = QRDQN(
         "CnnPolicy",
         env,
-        learning_rate=2.5e-4,
-        n_steps=128,                    # Steps per update per environment
-        batch_size=256,                 # Minibatch size
-        n_epochs=4,                     # Number of epochs per update
+        learning_rate=1e-4,
+        buffer_size=50000,
+        learning_starts=5000,
+        batch_size=32,
+        tau=1.0,
         gamma=0.99,
-        gae_lambda=0.95,
-        clip_range=0.1,
-        clip_range_vf=None,
-        ent_coef=0.01,                  # Entropy coefficient
-        vf_coef=0.5,                    # Value function coefficient
-        max_grad_norm=0.5,
+        train_freq=4,
+        gradient_steps=1,
+        target_update_interval=1000,
+        exploration_fraction=0.1,
+        exploration_initial_eps=1.0,
+        exploration_final_eps=0.01,
         verbose=1,
-        tensorboard_log="./logs/ppo/",
-        device="cuda"
+        tensorboard_log="./logs/rainbow/",
+        device="auto"
     )
 
     # Callbacks
     checkpoint_callback = CheckpointCallback(
         save_freq=50000,
-        save_path="./models/ppo/",
-        name_prefix="mspacman_ppo"
+        save_path="./models/rainbow/",
+        name_prefix="mspacman_rainbow"
     )
 
     eval_callback = EvalCallback(
         eval_env,
-        best_model_save_path="./models/ppo/best/",
-        log_path="./logs/ppo/eval/",
+        best_model_save_path="./models/rainbow/best/",
+        log_path="./logs/rainbow/eval/",
         eval_freq=10000,
         n_eval_episodes=5,
         deterministic=True,
@@ -163,7 +173,7 @@ def train_ppo():
     )
 
     print("Starting training...")
-    print("Monitor progress: tensorboard --logdir=./logs/ppo/")
+    print("Monitor progress: tensorboard --logdir=./logs/rainbow/")
     print("-" * 60)
 
     start_time = time.time()
@@ -179,17 +189,17 @@ def train_ppo():
     training_time = time.time() - start_time
 
     # Save final model
-    final_model_path = "models/ppo/mspacman_ppo_final.zip"
+    final_model_path = "models/rainbow/mspacman_rainbow_final.zip"
     model.save(final_model_path)
 
     print("\n" + "=" * 60)
     print(f"Training complete! Time: {training_time/3600:.2f} hours")
     print(f"Final model saved to {final_model_path}")
-    print(f"Best model saved to models/ppo/best/")
+    print(f"Best model saved to models/rainbow/best/")
     print("=" * 60)
 
     return model
 
 
 if __name__ == "__main__":
-    train_ppo()
+    train_rainbow()
