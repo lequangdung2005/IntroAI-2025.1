@@ -31,9 +31,8 @@ def make_env():
                   render_mode="rgb_array",
                   mode="vision")
     # Preprocess frames (grayscale 84x84) to drastically reduce replay buffer memory
-    env = Monitor(env)
-    # Outer preprocess wrapper (force because OCAtari mode='vision')
     env = PreprocessFrame(env, width=84, height=84, force_image=True)
+    env = Monitor(env)
     return env
 
 def train_dqn():

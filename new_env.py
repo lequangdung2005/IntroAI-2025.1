@@ -1,7 +1,6 @@
 """
-Train an on-policy agent (A2C) to play MsPacman using Stable Baselines3 + OCAtari
-This file was converted from the previous DQN-based implementation to A2C to avoid
-large replay buffer memory usage on constrained platforms (e.g. Kaggle).
+Train a PPO agent to play MsPacman using Stable Baselines3 + OCAtari with reward shaping
+PPO: Proximal Policy Optimization - Policy-based method with reward logging
 """
 import gymnasium as gym
 import ale_py
@@ -10,7 +9,7 @@ import os
 import time
 
 from ocatari.core import OCAtari
-from stable_baselines3 import A2C
+from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTransposeImage
 from stable_baselines3.common.monitor import Monitor
@@ -21,8 +20,8 @@ from preprocess import PreprocessFrame
 gym.register_envs(ale_py)
 
 # Tạo thư mục lưu model và log
-os.makedirs("models/a2c", exist_ok=True)
-os.makedirs("logs/a2c", exist_ok=True)
+os.makedirs("models/ppo", exist_ok=True)
+os.makedirs("logs/ppo", exist_ok=True)
 
 
 # ======= Reward shaping wrapper (fix tìm env có getScreenRGB) =======
@@ -102,64 +101,95 @@ def make_env():
                   render_mode="rgb_array",
                   mode="vision")
     env = RewardShapingWrapper(env)
-    env = Monitor(env)
-    # Preprocess as outermost wrapper (force because we requested vision)
     env = PreprocessFrame(env, width=84, height=84, force_image=True)
+    env = Monitor(env)
     return env
 
 
-def train_a2c():
-    """Train the A2C agent"""
+def train_ppo():
+    """Train the PPO agent"""
     print("=" * 60)
-    print("Training A2C Agent for MsPacman with OCAtari")
+    print("Training PPO Agent for MsPacman with OCAtari")
     print("=" * 60)
     print("Creating environment...")
 
-    # Env chính
-    env = DummyVecEnv([make_env])
-    env = VecTransposeImage(env)   # chuyển (H,W,C) -> (C,H,W)
-    env = VecFrameStack(env, n_stack=4)  # stack AFTER transpose
+    # Create vectorized environment (PPO works better with multiple parallel envs)
+    env = DummyVecEnv([make_env for _ in range(4)])  # 4 parallel environments
+    env = VecTransposeImage(env)  # Transpose (H,W,C) -> (C,H,W) for CNN
+    env = VecFrameStack(env, n_stack=4)
 
+    # Create evaluation environment
     eval_env = DummyVecEnv([make_env])
     eval_env = VecTransposeImage(eval_env)
     eval_env = VecFrameStack(eval_env, n_stack=4)
 
-    print("Initializing A2C agent...")
+    print("Initializing PPO agent...")
 
-    # A2C hyperparameters optimized for Atari
-
-    model = A2C(
+    # PPO hyperparameters optimized for Atari
+    model = PPO(
         "CnnPolicy",
         env,
-        learning_rate=7e-4,
-        n_steps=5,
+        learning_rate=2.5e-4,
+        n_steps=128,                    # Steps per update per environment
+        batch_size=256,                 # Minibatch size
+        n_epochs=4,                     # Number of epochs per update
         gamma=0.99,
-        gae_lambda=1.0,
-        ent_coef=0.01,
-        vf_coef=0.5,
+        gae_lambda=0.95,
+        clip_range=0.1,
+        clip_range_vf=None,
+        ent_coef=0.01,                  # Entropy coefficient
+        vf_coef=0.5,                    # Value function coefficient
         max_grad_norm=0.5,
-        rms_prop_eps=1e-5,
-        use_rms_prop=True,
-        normalize_advantage=False,
         verbose=1,
-        tensorboard_log="./logs/a2c/",
+        tensorboard_log="./logs/ppo/",
         device="auto"
     )
 
-    checkpoint_callback = CheckpointCallback(save_freq=50000, save_path="./models/a2c/", name_prefix="mspacman_a2c")
-    eval_callback = EvalCallback(eval_env, best_model_save_path="./models/a2c/best/", log_path="./logs/a2c/eval/", eval_freq=10000, n_eval_episodes=5, deterministic=True, render=False)
+    # Callbacks
+    checkpoint_callback = CheckpointCallback(
+        save_freq=50000,
+        save_path="./models/ppo/",
+        name_prefix="mspacman_ppo"
+    )
+
+    eval_callback = EvalCallback(
+        eval_env,
+        best_model_save_path="./models/ppo/best/",
+        log_path="./logs/ppo/eval/",
+        eval_freq=10000,
+        n_eval_episodes=5,
+        deterministic=True,
+        render=False
+    )
+
+    print("Starting training...")
+    print("Monitor progress: tensorboard --logdir=./logs/ppo/")
+    print("-" * 60)
 
     start_time = time.time()
-    model.learn(total_timesteps=1_000_000, callback=[checkpoint_callback, eval_callback], log_interval=10)
+
+    # Train the agent
+    model.learn(
+        total_timesteps=1000000,
+        callback=[checkpoint_callback, eval_callback],
+        log_interval=10,
+        progress_bar=True
+    )
+
     training_time = time.time() - start_time
 
-    final_model_path = "models/a2c/mspacman_a2c_final.zip"
+    # Save final model
+    final_model_path = "models/ppo/mspacman_ppo_final.zip"
     model.save(final_model_path)
 
+    print("\n" + "=" * 60)
     print(f"Training complete! Time: {training_time/3600:.2f} hours")
     print(f"Final model saved to {final_model_path}")
+    print(f"Best model saved to models/ppo/best/")
+    print("=" * 60)
+
     return model
 
 
 if __name__ == "__main__":
-    train_a2c()
+    train_ppo()
