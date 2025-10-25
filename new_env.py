@@ -1,7 +1,6 @@
 """
-Train a Rainbow DQN agent to play MsPacman using Stable Baselines3 + OCAtari with reward shaping
-Rainbow: Combines multiple DQN improvements (Double DQN, Dueling, Prioritized Experience Replay, etc.)
-Note: Rainbow is not directly available in Stable Baselines3, so we use sb3-contrib (QR-DQN)
+Train a DQN agent to play MsPacman using Stable Baselines3 + OCAtari with reward shaping
+DQN: Deep Q-Network - Value-based method
 """
 import gymnasium as gym
 import ale_py
@@ -10,14 +9,7 @@ import os
 import time
 
 from ocatari.core import OCAtari
-try:
-    from sb3_contrib import QRDQN  # Quantile Regression DQN (closest to Rainbow in SB3)
-except ImportError:
-    print("Warning: sb3-contrib not installed. Installing...")
-    print("Run: pip install sb3-contrib")
-    print("Using regular DQN as fallback")
-    from stable_baselines3 import DQN as QRDQN
-
+from stable_baselines3 import DQN
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTransposeImage
 from stable_baselines3.common.monitor import Monitor
@@ -28,8 +20,8 @@ from preprocess import PreprocessFrame
 gym.register_envs(ale_py)
 
 # Tạo thư mục lưu model và log
-os.makedirs("models/rainbow", exist_ok=True)
-os.makedirs("logs/rainbow", exist_ok=True)
+os.makedirs("models/dqn", exist_ok=True)
+os.makedirs("logs/dqn", exist_ok=True)
 
 
 # ======= Reward shaping wrapper (fix tìm env có getScreenRGB) =======
@@ -114,15 +106,15 @@ def make_env():
     return env
 
 
-def train_rainbow():
-    """Train the Rainbow (QR-DQN) agent"""
+def train_dqn():
+    """Train the DQN agent"""
     print("=" * 60)
-    print("Training Rainbow/QR-DQN Agent for MsPacman with OCAtari")
+    print("Training DQN Agent for MsPacman with OCAtari")
     print("=" * 60)
     print("Creating environment...")
 
-    # Create vectorized environment (DQN uses single environment)
-    env = DummyVecEnv([make_env])  # Single environment for DQN
+    # Create vectorized environment
+    env = DummyVecEnv([make_env])
     env = VecTransposeImage(env)  # Transpose (H,W,C) -> (C,H,W) for CNN
     env = VecFrameStack(env, n_stack=4)
 
@@ -131,17 +123,16 @@ def train_rainbow():
     eval_env = VecTransposeImage(eval_env)
     eval_env = VecFrameStack(eval_env, n_stack=4)
 
-    print("Initializing Rainbow/QR-DQN agent...")
+    print("Initializing DQN agent...")
 
-    # Rainbow (QR-DQN) hyperparameters optimized for Atari
-    # QR-DQN uses quantile regression for better value estimation
-    model = QRDQN(
+    # DQN hyperparameters optimized for Atari
+    model = DQN(
         "CnnPolicy",
         env,
         learning_rate=1e-4,
-        buffer_size=50000,
-        learning_starts=5000,
-        batch_size=32,
+        buffer_size=100000,
+        learning_starts=50000,
+        batch_size=64,
         tau=1.0,
         gamma=0.99,
         train_freq=4,
@@ -151,21 +142,21 @@ def train_rainbow():
         exploration_initial_eps=1.0,
         exploration_final_eps=0.01,
         verbose=1,
-        tensorboard_log="./logs/rainbow/",
+        tensorboard_log="./logs/dqn/",
         device="cuda"
     )
 
     # Callbacks
     checkpoint_callback = CheckpointCallback(
         save_freq=50000,
-        save_path="./models/rainbow/",
-        name_prefix="mspacman_rainbow"
+        save_path="./models/dqn/",
+        name_prefix="mspacman_dqn"
     )
 
     eval_callback = EvalCallback(
         eval_env,
-        best_model_save_path="./models/rainbow/best/",
-        log_path="./logs/rainbow/eval/",
+        best_model_save_path="./models/dqn/best/",
+        log_path="./logs/dqn/eval/",
         eval_freq=10000,
         n_eval_episodes=5,
         deterministic=True,
@@ -173,7 +164,7 @@ def train_rainbow():
     )
 
     print("Starting training...")
-    print("Monitor progress: tensorboard --logdir=./logs/rainbow/")
+    print("Monitor progress: tensorboard --logdir=./logs/dqn/")
     print("-" * 60)
 
     start_time = time.time()
@@ -189,17 +180,17 @@ def train_rainbow():
     training_time = time.time() - start_time
 
     # Save final model
-    final_model_path = "models/rainbow/mspacman_rainbow_final.zip"
+    final_model_path = "models/dqn/mspacman_dqn_final.zip"
     model.save(final_model_path)
 
     print("\n" + "=" * 60)
     print(f"Training complete! Time: {training_time/3600:.2f} hours")
     print(f"Final model saved to {final_model_path}")
-    print(f"Best model saved to models/rainbow/best/")
+    print(f"Best model saved to models/dqn/best/")
     print("=" * 60)
 
     return model
 
 
 if __name__ == "__main__":
-    train_rainbow()
+    train_dqn()
