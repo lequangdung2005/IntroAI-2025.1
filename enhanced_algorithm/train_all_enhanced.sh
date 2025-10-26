@@ -16,14 +16,8 @@ echo ""
 echo "Expected total time: 18-22 hours (with GPU)"
 echo "=========================================="
 echo ""
-
-read -p "Start training all algorithms? (y/n) " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]
-then
-    echo "Cancelled."
-    exit 1
-fi
+echo "Starting training automatically..."
+echo ""
 
 # Create log file
 LOG_FILE="training_progress_$(date +%Y%m%d_%H%M%S).log"
