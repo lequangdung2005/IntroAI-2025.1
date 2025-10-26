@@ -29,7 +29,7 @@ echo ""
 echo "=========================================="
 echo "[1/4] Training DQN with Enhanced Rewards"
 echo "=========================================="
-python train_enhanced_dqn.py 2>&1 | tee -a "$LOG_FILE"
+python enhanced_algorithm/train_enhanced_dqn.py 2>&1 | tee -a "$LOG_FILE"
 if [ ${PIPESTATUS[0]} -ne 0 ]; then
     echo "ERROR: DQN training failed!" | tee -a "$LOG_FILE"
     exit 1
@@ -40,7 +40,7 @@ echo ""
 echo "=========================================="
 echo "[2/4] Training PPO with Enhanced Rewards"
 echo "=========================================="
-python train_enhanced_ppo.py 2>&1 | tee -a "$LOG_FILE"
+python enhanced_algorithm/train_enhanced_ppo.py 2>&1 | tee -a "$LOG_FILE"
 if [ ${PIPESTATUS[0]} -ne 0 ]; then
     echo "ERROR: PPO training failed!" | tee -a "$LOG_FILE"
     exit 1
@@ -51,7 +51,7 @@ echo ""
 echo "=========================================="
 echo "[3/4] Training A2C with Enhanced Rewards"
 echo "=========================================="
-python train_enhanced_a2c.py 2>&1 | tee -a "$LOG_FILE"
+python enhanced_algorithm/train_enhanced_a2c.py 2>&1 | tee -a "$LOG_FILE"
 if [ ${PIPESTATUS[0]} -ne 0 ]; then
     echo "ERROR: A2C training failed!" | tee -a "$LOG_FILE"
     exit 1
@@ -62,14 +62,14 @@ echo ""
 echo "=========================================="
 echo "[4/4] Training Rainbow with Enhanced Rewards"
 echo "=========================================="
-python train_enhanced_rainbow.py 2>&1 | tee -a "$LOG_FILE"
+python enhanced_algorithm/train_enhanced_rainbow.py 2>&1 | tee -a "$LOG_FILE"
 if [ ${PIPESTATUS[0]} -ne 0 ]; then
     echo "ERROR: Rainbow training failed!" | tee -a "$LOG_FILE"
     exit 1
 fi
 
 echo ""
-echo "=========================================="
+echo "==============================="
 echo "All Training Completed Successfully!"
 echo "=========================================="
 echo ""
