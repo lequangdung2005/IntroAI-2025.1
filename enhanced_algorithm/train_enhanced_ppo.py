@@ -10,9 +10,9 @@ import time
 from ocatari.core import OCAtari
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
-from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTransposeImage
+from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
-from preprocess import PreprocessFrame
+from stable_baselines3.common.atari_wrappers import AtariWrapper
 from enhanced_wrapper import EnhancedPacmanRewardWrapper
 
 # Register ALE environments
@@ -25,11 +25,10 @@ os.makedirs("logs/enhanced_ppo", exist_ok=True)
 
 def make_env():
     """Create environment with enhanced reward shaping"""
-    env = OCAtari("ALE/Pacman-v5",  # Changed to regular Pacman
-                  render_mode="rgb_array",
-                  mode="vision")
-    env = EnhancedPacmanRewardWrapper(env)  # Add enhanced reward wrapper
-    env = PreprocessFrame(env, width=84, height=84, grayscale=False, force_image=True)  # RGB for VecTransposeImage
+    # Use standard gym environment with AtariWrapper
+    env = gym.make("ALE/Pacman-v5")
+    env = EnhancedPacmanRewardWrapper(env)  # Add enhanced reward wrapper first
+    env = AtariWrapper(env)  # Standard Atari preprocessing
     env = Monitor(env)
     return env
 
@@ -43,12 +42,10 @@ def train_ppo():
     
     # Create vectorized environment with parallel envs
     env = DummyVecEnv([make_env for _ in range(4)])  # 4 parallel environments
-    env = VecTransposeImage(env)
     env = VecFrameStack(env, n_stack=4)
     
     # Evaluation environment
     eval_env = DummyVecEnv([make_env])
-    eval_env = VecTransposeImage(eval_env)
     eval_env = VecFrameStack(eval_env, n_stack=4)
     
     print("Initializing PPO agent...")

@@ -15,9 +15,9 @@ except ImportError:
     from stable_baselines3 import DQN as QRDQN
 
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
-from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTransposeImage
+from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
-from preprocess import PreprocessFrame
+from stable_baselines3.common.atari_wrappers import AtariWrapper
 from enhanced_wrapper import EnhancedPacmanRewardWrapper
 
 # Register ALE environments
@@ -30,11 +30,10 @@ os.makedirs("logs/enhanced_rainbow", exist_ok=True)
 
 def make_env():
     """Create environment with enhanced reward shaping"""
-    env = OCAtari("ALE/Pacman-v5",  # Changed to regular Pacman
-                  render_mode="rgb_array",
-                  mode="vision")
-    env = EnhancedPacmanRewardWrapper(env)  # Add enhanced reward wrapper
-    env = PreprocessFrame(env, width=84, height=84, grayscale=False, force_image=True)  # RGB for VecTransposeImage
+    # Use standard gym environment with AtariWrapper
+    env = gym.make("ALE/Pacman-v5")
+    env = EnhancedPacmanRewardWrapper(env)  # Add enhanced reward wrapper first
+    env = AtariWrapper(env)  # Standard Atari preprocessing
     env = Monitor(env)
     return env
 
@@ -48,12 +47,10 @@ def train_rainbow():
     
     # Create vectorized environment
     env = DummyVecEnv([make_env])
-    env = VecTransposeImage(env)
     env = VecFrameStack(env, n_stack=4)
     
     # Evaluation environment
     eval_env = DummyVecEnv([make_env])
-    eval_env = VecTransposeImage(eval_env)
     eval_env = VecFrameStack(eval_env, n_stack=4)
     
     print("Initializing Rainbow/QR-DQN agent...")
@@ -62,8 +59,8 @@ def train_rainbow():
         "CnnPolicy",
         env,
         learning_rate=1e-4,
-        buffer_size=100000,
-        learning_starts=50000,
+        buffer_size=10000,  # Reduced from 100000 to fit in memory
+        learning_starts=5000,  # Reduced proportionally
         batch_size=32,
         tau=1.0,
         gamma=0.99,

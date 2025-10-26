@@ -55,19 +55,13 @@ class PreprocessFrame(gym.ObservationWrapper):
         Process observation frame
         
         Args:
-            obs: Raw observation from environment
+            obs: Raw observation from environment (RGB frame from ALE)
             
         Returns:
             Preprocessed frame (grayscale or RGB)
         """
-        # Get RGB frame from OCAtari
-        if hasattr(self.env, 'getScreenRGB'):
-            frame = self.env.getScreenRGB()
-        elif hasattr(self.env.unwrapped, 'getScreenRGB'):
-            frame = self.env.unwrapped.getScreenRGB()
-        else:
-            # Fallback to observation if getScreenRGB not available
-            frame = obs
+        # obs is already the RGB frame from gym.make with render_mode="rgb_array"
+        frame = obs
         
         # Ensure frame is numpy array
         if not isinstance(frame, np.ndarray):
@@ -196,10 +190,10 @@ def make_preprocessed_env(env_name="ALE/Pacman-v5", width=84, height=84,
     Returns:
         Preprocessed environment
     """
-    from ocatari.core import OCAtari
+    import gymnasium as gym
     
-    # Create OCAtari environment
-    env = OCAtari(env_name, render_mode="rgb_array", mode="vision")
+    # Create standard gym environment
+    env = gym.make(env_name, render_mode="rgb_array", frameskip=1)
     
     # Apply preprocessing
     env = PreprocessFrame(env, width=width, height=height, grayscale=grayscale, force_image=True)
@@ -215,7 +209,7 @@ def make_preprocessed_env(env_name="ALE/Pacman-v5", width=84, height=84,
 
 if __name__ == "__main__":
     """Test preprocessing pipeline"""
-    print("Testing OCAtari preprocessing...")
+    print("Testing preprocessing pipeline...")
     
     # Create environment
     env = make_preprocessed_env(
