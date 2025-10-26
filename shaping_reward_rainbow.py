@@ -1,6 +1,7 @@
 """
-Train a DQN agent to play MsPacman using Stable Baselines3 + OCAtari with reward shaping
-DQN: Deep Q-Network - Value-based method
+Train a Rainbow DQN agent to play MsPacman using Stable Baselines3 + OCAtari with reward shaping
+Rainbow: Combines multiple DQN improvements (Double DQN, Dueling, Prioritized Experience Replay, etc.)
+Note: Rainbow is not directly available in Stable Baselines3, so we use sb3-contrib (QR-DQN)
 """
 import gymnasium as gym
 import ale_py
@@ -9,7 +10,14 @@ import os
 import time
 
 from ocatari.core import OCAtari
-from stable_baselines3 import DQN
+try:
+    from sb3_contrib import QRDQN  # Quantile Regression DQN (closest to Rainbow in SB3)
+except ImportError:
+    print("Warning: sb3-contrib not installed. Installing...")
+    print("Run: pip install sb3-contrib")
+    print("Using regular DQN as fallback")
+    from stable_baselines3 import DQN as QRDQN
+
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTransposeImage
 from stable_baselines3.common.monitor import Monitor
@@ -20,8 +28,8 @@ from preprocess import PreprocessFrame
 gym.register_envs(ale_py)
 
 # Tạo thư mục lưu model và log
-os.makedirs("models/dqn", exist_ok=True)
-os.makedirs("logs/dqn", exist_ok=True)
+os.makedirs("models/rainbow", exist_ok=True)
+os.makedirs("logs/rainbow", exist_ok=True)
 
 
 # ======= Reward shaping wrapper (fix tìm env có getScreenRGB) =======
@@ -36,7 +44,7 @@ class RewardShapingWrapper(gym.Wrapper):
         self.step_count = 0
 
     def _get_rgb_frame(self):
-        """Trả về frame RGB gốc để DQN học."""
+        """Trả về frame RGB gốc để Rainbow học."""
         # OCAtari luôn có hàm này trong mode=vision
         if hasattr(self.oc_env, "getScreenRGB"):
             frame = self.oc_env.getScreenRGB()
@@ -80,10 +88,10 @@ class RewardShapingWrapper(gym.Wrapper):
                         bonus_eating_ghost_reward += 10.0 / (dist + 1)
                     else:
                         penalty_nearing_ghost_reward -= 10.0 / (dist + 1)
-            # Chỉ ghi log mỗi 100 bước
+            # Chỉ ghi log mỗi 25 bước
             self.step_count += 1
-            if self.step_count % 50 == 0:
-                with open("shaping_reward_log.txt", "a") as f:
+            if self.step_count % 25 == 0:
+                with open("shaping_reward_rainbow_log.txt", "a") as f:
                     f.write(f"is_powered_up: {is_powered_up}, base_reward: {reward:.3f}, bonus_powerpill_reward: {bonus_powerpill_reward:.3f}, bonus_eating_ghost_reward: {bonus_eating_ghost_reward:.3f}, penalty_nearing_ghost_reward: {penalty_nearing_ghost_reward:.3f}\n")
         return obs, reward, terminated, truncated, info
 
@@ -99,10 +107,10 @@ def make_env():
     return env
 
 
-def train_dqn():
-    """Train the DQN agent"""
+def train_rainbow():
+    """Train the Rainbow (QR-DQN) agent"""
     print("=" * 60)
-    print("Training DQN Agent for MsPacman with OCAtari")
+    print("Training Rainbow/QR-DQN Agent for MsPacman with OCAtari")
     print("=" * 60)
     print("Creating environment...")
 
@@ -116,16 +124,17 @@ def train_dqn():
     eval_env = VecTransposeImage(eval_env)
     eval_env = VecFrameStack(eval_env, n_stack=4)
 
-    print("Initializing DQN agent...")
+    print("Initializing Rainbow/QR-DQN agent...")
 
-    # DQN hyperparameters optimized for Atari
-    model = DQN(
+    # Rainbow (QR-DQN) hyperparameters optimized for Atari
+    # QR-DQN uses quantile regression for better value estimation
+    model = QRDQN(
         "CnnPolicy",
         env,
         learning_rate=1e-4,
-        buffer_size=100000,
-        learning_starts=50000,
-        batch_size=64,
+        buffer_size=50000,
+        learning_starts=5000,
+        batch_size=32,
         tau=1.0,
         gamma=0.99,
         train_freq=4,
@@ -135,21 +144,21 @@ def train_dqn():
         exploration_initial_eps=1.0,
         exploration_final_eps=0.01,
         verbose=1,
-        tensorboard_log="./logs/dqn/",
+        tensorboard_log="./logs/rainbow/",
         device="auto"
     )
 
     # Callbacks
     checkpoint_callback = CheckpointCallback(
         save_freq=50000,
-        save_path="./models/dqn/",
-        name_prefix="mspacman_dqn"
+        save_path="./models/rainbow/",
+        name_prefix="mspacman_rainbow"
     )
 
     eval_callback = EvalCallback(
         eval_env,
-        best_model_save_path="./models/dqn/best/",
-        log_path="./logs/dqn/eval/",
+        best_model_save_path="./models/rainbow/best/",
+        log_path="./logs/rainbow/eval/",
         eval_freq=10000,
         n_eval_episodes=5,
         deterministic=True,
@@ -157,7 +166,7 @@ def train_dqn():
     )
 
     print("Starting training...")
-    print("Monitor progress: tensorboard --logdir=./logs/dqn/")
+    print("Monitor progress: tensorboard --logdir=./logs/rainbow/")
     print("-" * 60)
 
     start_time = time.time()
@@ -173,17 +182,17 @@ def train_dqn():
     training_time = time.time() - start_time
 
     # Save final model
-    final_model_path = "models/dqn/mspacman_dqn_final.zip"
+    final_model_path = "models/rainbow/mspacman_rainbow_final.zip"
     model.save(final_model_path)
 
     print("\n" + "=" * 60)
     print(f"Training complete! Time: {training_time/3600:.2f} hours")
     print(f"Final model saved to {final_model_path}")
-    print(f"Best model saved to models/dqn/best/")
+    print(f"Best model saved to models/rainbow/best/")
     print("=" * 60)
 
     return model
 
 
 if __name__ == "__main__":
-    train_dqn()
+    train_rainbow()
