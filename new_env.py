@@ -32,15 +32,8 @@ class RewardShapingWrapper(gym.Wrapper):
     """
     def __init__(self, env):
         super().__init__(env)
-        self.oc_env = self._get_inner_ocatari()
+        self.oc_env = self.env
         self.step_count = 0
-
-    def _get_inner_ocatari(self):
-        """Truy vào tận OCAtari gốc (bỏ qua các wrapper)."""
-        oc_env = self.env
-        while hasattr(oc_env, "env"):
-            oc_env = oc_env.env
-        return oc_env
 
     def _get_rgb_frame(self):
         """Trả về frame RGB gốc để DQN học."""
@@ -143,7 +136,7 @@ def train_dqn():
         exploration_final_eps=0.01,
         verbose=1,
         tensorboard_log="./logs/dqn/",
-        device="cuda"
+        device="auto"
     )
 
     # Callbacks
