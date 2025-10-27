@@ -1,0 +1,39 @@
+/home/huongtt/miniconda3/envs/pacman/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import resource_stream, resource_exists
+A.L.E: Arcade Learning Environment (version 0.11.2+ecc1138)
+[Powered by Stella]
+============================================================
+Training DQN for Pacman (Enhanced)
+============================================================
+Creating environment...
+Initializing DQN agent...
+Using cuda device
+Wrapping the env in a VecTransposeImage.
+Starting training...
+Monitor: tensorboard --logdir=./logs/enhanced_dqn/
+------------------------------------------------------------
+Logging to ./logs/enhanced_dqn/DQN_7
+/home/huongtt/miniconda3/envs/pacman/lib/python3.12/site-packages/stable_baselines3/common/callbacks.py:418: UserWarning: Training and eval env are not of the same type<stable_baselines3.common.vec_env.vec_transpose.VecTransposeImage object at 0x77e06c797c20> != <stable_baselines3.common.vec_env.vec_frame_stack.VecFrameStack object at 0x77e06d203290>
+  warnings.warn("Training and eval env are not of the same type" f"{self.training_env} != {self.eval_env}")
+----------------------------------
+| rollout/            |          |
+|    ep_len_mean      | 26.5     |
+|    ep_rew_mean      | 23.3     |
+|    exploration_rate | 0.999    |
+| time/               |          |
+|    episodes         | 10       |
+|    fps              | 512      |
+|    time_elapsed     | 0        |
+|    total_timesteps  | 265      |
+----------------------------------
+----------------------------------
+| rollout/            |          |
+|    ep_len_mean      | 26.7     |
+|    ep_rew_mean      | 22.8     |
+|    exploration_rate | 0.997    |
+| time/               |          |
+|    episodes         | 20       |
+|    fps              | 518      |
+|    time_elapsed     | 1        |
+|    total_timesteps  | 534      |
+----------------------------------
