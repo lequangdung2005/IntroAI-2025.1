@@ -71,7 +71,7 @@ def train_ppo():
         max_grad_norm=0.5,
         verbose=1,
         tensorboard_log="./logs/ppo/",
-        device="auto"
+        device="cuda"
     )
 
     # Callbacks

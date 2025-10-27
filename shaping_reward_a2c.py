@@ -70,7 +70,7 @@ def train_a2c():
         normalize_advantage=False,
         verbose=1,
         tensorboard_log="./logs/a2c/",
-        device="auto"
+        device="cuda"
     )
 
     # Callbacks
