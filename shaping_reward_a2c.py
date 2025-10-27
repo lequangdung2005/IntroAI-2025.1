@@ -101,8 +101,8 @@ class RewardShapingWrapper(gym.Wrapper):
         if self.step_count % 25 == 0:
             with open("shaping_reward_a2c_log.txt", "a") as f:
                 f.write(f"is_powered_up: {is_powered_up}, base_reward: {reward:.3f}, "
-                       f"bonus_powerpill: {bonus_powerpill:.3f}, bonus_eating_ghost: {bonus_eating_ghost:.3f}, "
-                       f"penalty_nearing_ghost: {penalty_nearing_ghost:.3f}, shaped_reward: {shaped_reward:.3f}\n")
+                       f"bonus_powerpill: {bonus_powerpill_raw:.3f}, bonus_eating_ghost: {bonus_eating_ghost_raw:.3f}, "
+                       f"penalty_nearing_ghost: {penalty_nearing_ghost_raw:.3f}, shaped_reward: {shaped_reward:.3f}\n")
         
         return obs, shaped_reward, terminated, truncated, info
 
