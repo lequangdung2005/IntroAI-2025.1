@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="pacman_dqn_50000_steps">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/models/dqn/pacman_dqn_50000_steps.zip!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

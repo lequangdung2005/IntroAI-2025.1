@@ -54,38 +54,57 @@ class RewardShapingWrapper(gym.Wrapper):
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
         objects = getattr(self.env, "objects", [])
+        
+        # === Analyzed optimal parameters ===
+        BONUS_POWERPILL_COEF = 0.200
+        BONUS_EATING_GHOST_COEF = 0.500
+        PENALTY_NEARING_GHOST_COEF = 0.250  # Positive - log values already negative
+        
         # === Reward shaping ===
+        bonus_powerpill_raw = 0.0
+        bonus_eating_ghost_raw = 0.0
+        penalty_nearing_ghost_raw = 0.0
+        
         player = next((o for o in objects if getattr(o, "category", None) == "Player"), None)
         if player is not None:
             px, py = getattr(player, "x", 0), getattr(player, "y", 0)
-            bonus_powerpill_reward = 0.0
-            bonus_eating_ghost_reward = 0.0
-            penalty_nearing_ghost_reward = 0.0
             is_powered_up = self.is_powered_up()
 
-            # thưởng nếu gần PowerPill
+            # Bonus for approaching PowerPill (when not powered up)
             powerpills = [o for o in objects if getattr(o, "category", None) == "PowerPill"]
             if powerpills and not is_powered_up:
                 dists = [np.linalg.norm([px - o.x, py - o.y]) for o in powerpills]
                 dist = min(dists)
-                bonus_powerpill_reward += 10.0 / (dist + 1)
+                bonus_powerpill_raw += 10.0 / (dist + 1)
 
-            # phạt nếu gần Ghost
+            # Bonus for chasing ghosts OR penalty for being near ghosts
             ghosts = [o for o in objects if getattr(o, "category", None) == "Ghost"]
             for g in ghosts:
                 gx, gy = g.x, g.y
                 dist = np.linalg.norm([px - gx, py - gy])
                 if dist < 10:
                     if is_powered_up:
-                        bonus_eating_ghost_reward += 10.0 / (dist + 1)
+                        bonus_eating_ghost_raw += 10.0 / (dist + 1)
                     else:
-                        penalty_nearing_ghost_reward -= 10.0 / (dist + 1)
-            # Chỉ ghi log mỗi 25 bước
-            self.step_count += 1
-            if self.step_count % 25 == 0:
-                with open("shaping_reward_dqn_log.txt", "a") as f:
-                    f.write(f"is_powered_up: {is_powered_up}, base_reward: {reward:.3f}, bonus_powerpill_reward: {bonus_powerpill_reward:.3f}, bonus_eating_ghost_reward: {bonus_eating_ghost_reward:.3f}, penalty_nearing_ghost_reward: {penalty_nearing_ghost_reward:.3f}\n")
-        return obs, reward, terminated, truncated, info
+                        penalty_nearing_ghost_raw -= 10.0 / (dist + 1)  # Already negative
+        
+        # Apply coefficients (analyzed from logs)
+        bonus_powerpill = BONUS_POWERPILL_COEF * bonus_powerpill_raw
+        bonus_eating_ghost = BONUS_EATING_GHOST_COEF * bonus_eating_ghost_raw
+        penalty_nearing_ghost = PENALTY_NEARING_GHOST_COEF * penalty_nearing_ghost_raw
+        
+        # Compute shaped reward
+        shaped_reward = reward + bonus_powerpill + bonus_eating_ghost + penalty_nearing_ghost
+        
+        # Log every 25 steps
+        self.step_count += 1
+        if self.step_count % 25 == 0:
+            with open("shaping_reward_dqn_log.txt", "a") as f:
+                f.write(f"is_powered_up: {is_powered_up}, base_reward: {reward:.3f}, "
+                       f"bonus_powerpill: {bonus_powerpill:.3f}, bonus_eating_ghost: {bonus_eating_ghost:.3f}, "
+                       f"penalty_nearing_ghost: {penalty_nearing_ghost:.3f}, shaped_reward: {shaped_reward:.3f}\n")
+        
+        return obs, shaped_reward, terminated, truncated, info
 
 
 # ======= Tạo env (không dùng AtariWrapper) =======
