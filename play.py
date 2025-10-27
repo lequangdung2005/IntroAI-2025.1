@@ -10,9 +10,8 @@ try:
 except ImportError:
     QRDQN = None
 
-from ocatari.core import OCAtari
 from stable_baselines3.common.atari_wrappers import AtariWrapper
-from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTransposeImage
+from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
 import sys
 import os
@@ -20,13 +19,6 @@ import numpy as np
 import cv2
 import time
 import argparse
-
-# Check if preprocess module exists for enhanced mode
-try:
-    from preprocess import PreprocessFrame
-    ENHANCED_AVAILABLE = True
-except ImportError:
-    ENHANCED_AVAILABLE = False
 
 # Register ALE environments
 gym.register_envs(ale_py)
@@ -42,23 +34,16 @@ ALGORITHMS = {
 
 def make_env_baseline():
     """Create baseline environment (standard Atari)"""
-    env = gym.make("ALE/Pacman-v5",
-                   render_mode="rgb_array",
-                   frameskip=1)
+    env = gym.make("ALE/Pacman-v5", render_mode="rgb_array")
     env = AtariWrapper(env)
     env = Monitor(env)
     return env
 
 
 def make_env_enhanced():
-    """Create enhanced environment (OCAtari with preprocessing)"""
-    if not ENHANCED_AVAILABLE:
-        raise ImportError("PreprocessFrame not found. Make sure preprocess.py is available.")
-    
-    env = OCAtari("ALE/Pacman-v5",
-                  render_mode="rgb_array",
-                  mode="vision")
-    env = PreprocessFrame(env, width=84, height=84, force_image=True)
+    """Create enhanced environment (same as baseline, both use AtariWrapper)"""
+    env = gym.make("ALE/Pacman-v5", render_mode="rgb_array")
+    env = AtariWrapper(env)
     env = Monitor(env)
     return env
 
@@ -74,14 +59,13 @@ def load_model(algorithm, model_path, mode='baseline'):
     algo_config = ALGORITHMS[algorithm]
     print(f"Loading {algo_config['name']} from {model_path}...")
     
-    # Create environment based on mode
+    # Create environment based on mode (both use same wrapper now)
     if mode == 'enhanced':
         env = DummyVecEnv([make_env_enhanced])
-        env = VecTransposeImage(env)
-        env = VecFrameStack(env, n_stack=4)
     else:  # baseline
         env = DummyVecEnv([make_env_baseline])
-        env = VecFrameStack(env, n_stack=4)
+    
+    env = VecFrameStack(env, n_stack=4)
     
     # Load model
     model = algo_config['class'].load(model_path, env=env)

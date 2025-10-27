@@ -80,11 +80,11 @@ class EnhancedPacmanRewardWrapper(gym.Wrapper):
         
         # ===== 5. Death penalty =====
         if current_lives < self.prev_lives:
-            shaped_reward -= 100  # Large penalty for dying
+            shaped_reward -= 10  # Large penalty for dying
         
         # ===== 6. Stagnation penalty =====
         # Penalize if not scoring for too long
-        if self.steps_without_score > 100:
+        if self.steps_without_score > 20:
             shaped_reward -= 0.5
         
         # ===== 7. Level completion bonus =====
