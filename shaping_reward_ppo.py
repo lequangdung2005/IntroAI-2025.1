@@ -13,8 +13,8 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTransposeImage
 from stable_baselines3.common.monitor import Monitor
-from ocatari.vision.utils import find_objects
 from preprocess import PreprocessFrame
+from reward_shaping_wrapper import RewardShapingWrapper
 
 # Đăng ký ALE environments
 gym.register_envs(ale_py)
@@ -24,95 +24,12 @@ os.makedirs("models/ppo", exist_ok=True)
 os.makedirs("logs/ppo", exist_ok=True)
 
 
-# ======= Reward shaping wrapper (fix tìm env có getScreenRGB) =======
-class RewardShapingWrapper(gym.Wrapper):
-    """
-    Reward shaping wrapper that searches the wrapper chain for an environment
-    providing getScreenRGB (OCAtari) and uses it to return RGB frames.
-    """
-    def __init__(self, env):
-        super().__init__(env)
-        self.oc_env = self.env
-        self.step_count = 0
-
-    def _get_rgb_frame(self):
-        """Trả về frame RGB gốc để PPO học."""
-        # OCAtari luôn có hàm này trong mode=vision
-        if hasattr(self.oc_env, "getScreenRGB"):
-            frame = self.oc_env.getScreenRGB()
-        else:
-            frame = np.zeros((210, 160, 3), dtype=np.uint8)
-        return frame
-
-    def is_powered_up(self):
-        """Phát hiện ghost đang ăn được (theo màu xanh)."""
-        frame = self._get_rgb_frame()
-        # find_objects expects list of RGB tuples
-        eatable_ghosts = find_objects(frame, [(66, 114, 194)], min_distance=1)
-        return bool(eatable_ghosts)
-
-    def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        objects = getattr(self.env, "objects", [])
-        
-        # === Analyzed optimal parameters ===
-        BONUS_POWERPILL_COEF = 0.200
-        BONUS_EATING_GHOST_COEF = 0.500
-        PENALTY_NEARING_GHOST_COEF = 0.250  # Positive - log values already negative
-        
-        # === Reward shaping ===
-        bonus_powerpill_raw = 0.0
-        bonus_eating_ghost_raw = 0.0
-        penalty_nearing_ghost_raw = 0.0
-        
-        player = next((o for o in objects if getattr(o, "category", None) == "Player"), None)
-        if player is not None:
-            px, py = getattr(player, "x", 0), getattr(player, "y", 0)
-            is_powered_up = self.is_powered_up()
-
-            # Bonus for approaching PowerPill (when not powered up)
-            powerpills = [o for o in objects if getattr(o, "category", None) == "PowerPill"]
-            if powerpills and not is_powered_up:
-                dists = [np.linalg.norm([px - o.x, py - o.y]) for o in powerpills]
-                dist = min(dists)
-                bonus_powerpill_raw += 10.0 / (dist + 1)
-
-            # Bonus for chasing ghosts OR penalty for being near ghosts
-            ghosts = [o for o in objects if getattr(o, "category", None) == "Ghost"]
-            for g in ghosts:
-                gx, gy = g.x, g.y
-                dist = np.linalg.norm([px - gx, py - gy])
-                if dist < 10:
-                    if is_powered_up:
-                        bonus_eating_ghost_raw += 10.0 / (dist + 1)
-                    else:
-                        penalty_nearing_ghost_raw -= 10.0 / (dist + 1)  # Already negative
-        
-        # Apply coefficients (analyzed from logs)
-        bonus_powerpill = BONUS_POWERPILL_COEF * bonus_powerpill_raw
-        bonus_eating_ghost = BONUS_EATING_GHOST_COEF * bonus_eating_ghost_raw
-        penalty_nearing_ghost = PENALTY_NEARING_GHOST_COEF * penalty_nearing_ghost_raw
-        
-        # Compute shaped reward
-        shaped_reward = reward + bonus_powerpill + bonus_eating_ghost + penalty_nearing_ghost
-        
-        # Log every 25 steps
-        self.step_count += 1
-        if self.step_count % 25 == 0:
-            with open("shaping_reward_ppo_log.txt", "a") as f:
-                f.write(f"is_powered_up: {is_powered_up}, base_reward: {reward:.3f}, "
-                       f"bonus_powerpill: {bonus_powerpill_raw:.3f}, bonus_eating_ghost: {bonus_eating_ghost_raw:.3f}, "
-                       f"penalty_nearing_ghost: {penalty_nearing_ghost_raw:.3f}, shaped_reward: {shaped_reward:.3f}\n")
-        
-        return obs, shaped_reward, terminated, truncated, info
-
-
-# ======= Tạo env (không dùng AtariWrapper) =======
+# ======= Create env =======
 def make_env():
     env = OCAtari("ALE/MsPacman-v5",
                   render_mode="rgb_array",
                   mode="vision")
-    env = RewardShapingWrapper(env)
+    env = RewardShapingWrapper(env, enable_logging=True, log_file="shaping_reward_ppo_log.txt")
     env = PreprocessFrame(env, width=84, height=84, force_image=True)
     env = Monitor(env)
     return env
