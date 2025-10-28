@@ -18,18 +18,15 @@ class RewardShapingWrapper(gym.Wrapper):
     # === Analyzed optimal parameters ===
     BONUS_POWERPILL_COEF = 0.250
     POWERPILL_RADIUS = 30.0
-
     BONUS_EATING_GHOST_COEF = 1
     GHOST_CHASE_RADIUS = 20.0
-
     PENALTY_NEARING_GHOST_COEF = 0.250  # Positive - log values already negative
     GHOST_AVOID_RADIUS = 15.0
     
     # === Anti-stalling parameters ===
-    MAX_STEPS_WITHOUT_SCORE = 50  # Max steps without scoring before penalty
+    MAX_STEPS_WITHOUT_SCORE = 30  # Max steps without scoring before penalty
     STALLING_PENALTY = -0.01  # Small penalty per step without score (after threshold)
     MOVEMENT_BONUS = 0.01  # Small bonus for taking non-zero action
-    CONSECUTIVE_NOOP_PENALTY = -0.01  # Small penalty for consecutive NOOPs
 
     
     def __init__(self, env, enable_logging=False, log_file="shaping_reward_log.txt"):
@@ -141,7 +138,7 @@ class RewardShapingWrapper(gym.Wrapper):
             
             # 3. Anti-stalling penalty (after threshold)
             if self.steps_without_score > self.MAX_STEPS_WITHOUT_SCORE:
-                stalling_penalty = max(self.STALLING_PENALTY * (self.steps_without_score - self.MAX_STEPS_WITHOUT_SCORE) **1.1,-1.5)
+                stalling_penalty = min(self.STALLING_PENALTY * (self.steps_without_score - self.MAX_STEPS_WITHOUT_SCORE) **1.1,-1.5)
                 if is_powered_up:
                     stalling_penalty *= 0.5  # Reduce penalty when powered up
             
@@ -152,8 +149,7 @@ class RewardShapingWrapper(gym.Wrapper):
             else:
                 self.consecutive_noops+=1
                 if self.consecutive_noops > 6:
-                    movement_bonus = self.CONSECUTIVE_NOOP_PENALTY*(self.consecutive_noops - 6)  # No bonus for extended NOOPs
-
+                    movement_bonus = -0.001*(self.consecutive_noops - 6)  # No bonus for extended NOOPs
         
         # Apply coefficients
         bonus_powerpill = self.BONUS_POWERPILL_COEF * bonus_powerpill_raw
@@ -167,7 +163,7 @@ class RewardShapingWrapper(gym.Wrapper):
         # Logging
         if self.enable_logging:
             self.step_count += 1
-            if self.step_count % 4 == 0:
+            if self.step_count % 25 == 0:
                 is_powered = self.is_powered_up() if player is not None else False
                 with open(self.log_file, "a") as f:
                     f.write(
