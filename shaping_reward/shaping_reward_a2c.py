@@ -22,9 +22,12 @@ gym.register_envs(ale_py)
 # Get number of CPU cores for parallel environments
 N_ENVS = min(os.cpu_count(), 20)  # Use all available cores (max 20)
 
+# Get project root directory (parent of shaping_reward/)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 # Tạo thư mục lưu model và log
-os.makedirs("models/a2c", exist_ok=True)
-os.makedirs("logs/a2c", exist_ok=True)
+os.makedirs(os.path.join(PROJECT_ROOT, "models/a2c"), exist_ok=True)
+os.makedirs(os.path.join(PROJECT_ROOT, "logs/a2c"), exist_ok=True)
 
 
 # ======= Create env =======
@@ -32,7 +35,8 @@ def make_env():
     env = OCAtari("ALE/MsPacman-v5",
                   render_mode="rgb_array",
                   mode="vision")
-    env = RewardShapingWrapper(env, enable_logging=True, log_file="shaping_reward_a2c_log.txt")
+    env = RewardShapingWrapper(env, enable_logging=True, 
+                              log_file=os.path.join(PROJECT_ROOT, "shaping_reward_a2c_log.txt"))
     env = PreprocessFrame(env, width=84, height=84, force_image=True)
     env = Monitor(env)
     return env
@@ -73,21 +77,21 @@ def train_a2c():
         use_rms_prop=True,
         normalize_advantage=False,
         verbose=1,
-        tensorboard_log="./logs/a2c/",
+        tensorboard_log=os.path.join(PROJECT_ROOT, "logs/a2c/"),
         device="cuda"
     )
 
     # Callbacks
     checkpoint_callback = CheckpointCallback(
         save_freq=50000,
-        save_path="./models/a2c/",
+        save_path=os.path.join(PROJECT_ROOT, "models/a2c/"),
         name_prefix="mspacman_a2c"
     )
 
     eval_callback = EvalCallback(
         eval_env,
-        best_model_save_path="./models/a2c/best/",
-        log_path="./logs/a2c/eval/",
+        best_model_save_path=os.path.join(PROJECT_ROOT, "models/a2c/best/"),
+        log_path=os.path.join(PROJECT_ROOT, "logs/a2c/eval/"),
         eval_freq=10000,
         n_eval_episodes=5,
         deterministic=True,
@@ -111,13 +115,13 @@ def train_a2c():
     training_time = time.time() - start_time
 
     # Save final model
-    final_model_path = "models/a2c/mspacman_a2c_final.zip"
+    final_model_path = os.path.join(PROJECT_ROOT, "models/a2c/mspacman_a2c_final.zip")
     model.save(final_model_path)
 
     print("\n" + "=" * 60)
     print(f"Training complete! Time: {training_time/3600:.2f} hours")
     print(f"Final model saved to {final_model_path}")
-    print(f"Best model saved to models/a2c/best/")
+    print(f"Best model saved to {os.path.join(PROJECT_ROOT, 'models/a2c/best/')}")
     print("=" * 60)
 
     return model
