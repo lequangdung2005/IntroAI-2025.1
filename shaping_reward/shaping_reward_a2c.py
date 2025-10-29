@@ -14,7 +14,7 @@ from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, SubprocVecEnv, VecTransposeImage
 from stable_baselines3.common.monitor import Monitor
 from preprocess import PreprocessFrame
-from environment.reward_shaping_wrapper_3 import EnhancedStabilityRewardShaper as RewardShapingWrapper
+from environment.reward_shaping_wrapper_3 import StabilityFixedRewardShaper as RewardShapingWrapper
 
 # Đăng ký ALE environments
 gym.register_envs(ale_py)
