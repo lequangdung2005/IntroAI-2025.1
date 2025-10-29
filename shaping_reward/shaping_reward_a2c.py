@@ -14,7 +14,7 @@ from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, SubprocVecEnv, VecTransposeImage
 from stable_baselines3.common.monitor import Monitor
 from preprocess import PreprocessFrame
-from environment.reward_shaping_wrapper_4 import EnhancedStabilityRewardShaper as RewardShapingWrapper
+from environment.reward_shaping_wrapper_3 import EnhancedStabilityRewardShaper as RewardShapingWrapper
 
 # Đăng ký ALE environments
 gym.register_envs(ale_py)
@@ -34,7 +34,7 @@ os.makedirs(os.path.join(PROJECT_ROOT, "logs/a2c"), exist_ok=True)
 def make_env():
     env = OCAtari("ALE/MsPacman-v5",
                   render_mode="rgb_array",
-                  mode="vision")
+                  mode="both")  # Changed to 'both' for accurate detection
     env = RewardShapingWrapper(env, enable_logging=True, 
                               log_file=os.path.join(PROJECT_ROOT, "shaping_reward_a2c_log.txt"))
     env = PreprocessFrame(env, width=84, height=84, force_image=True)

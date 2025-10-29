@@ -61,7 +61,7 @@ def make_env_render():
     """Create and wrap the MsPacman environment using OCAtari for rendering"""
     env = OCAtari("ALE/MsPacman-v5",
                   render_mode="rgb_array",
-                  mode="vision")
+                  mode="both")  # Changed to 'both' for accurate detection
     # Preprocess frames (grayscale 84x84) to match training environment
     env = PreprocessFrame(env, width=84, height=84, force_image=True)
     env = Monitor(env)
