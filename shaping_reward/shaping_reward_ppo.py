@@ -1,50 +1,63 @@
 """
-Train a PPO agent to play Pacman using Stable Baselines3
-PPO: Proximal Policy Optimization - Policy-based method
+Train a PPO agent to play MsPacman using Stable Baselines3 + OCAtari with reward shaping
+PPO: Proximal Policy Optimization - Policy-based method with reward logging
 """
 import gymnasium as gym
 import ale_py
-from stable_baselines3 import PPO
-from stable_baselines3.common.atari_wrappers import AtariWrapper
-from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
-from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv
-from stable_baselines3.common.monitor import Monitor
+import numpy as np
 import os
 import time
 
-# Register ALE environments
+from ocatari.core import OCAtari
+from stable_baselines3 import PPO
+from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
+from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, SubprocVecEnv, VecTransposeImage
+from stable_baselines3.common.monitor import Monitor
+from preprocess import PreprocessFrame
+from environment.reward_shaping_wrapper_4 import EnhancedStabilityRewardShaper as RewardShapingWrapper
+
+# Đăng ký ALE environments
 gym.register_envs(ale_py)
 
-# Create directories for saving models and logs
+# Get number of CPU cores for parallel environments
+N_ENVS = min(os.cpu_count(), 20)  # Use all available cores (max 20)
+
+# Tạo thư mục lưu model và log
 os.makedirs("models/ppo", exist_ok=True)
 os.makedirs("logs/ppo", exist_ok=True)
 
+
+# ======= Create env =======
 def make_env():
-    """Create and wrap the Pacman environment"""
-    env = gym.make("ALE/Pacman-v5", 
-                   render_mode="rgb_array",
-                   frameskip=1)
-    env = AtariWrapper(env)
+    env = OCAtari("ALE/MsPacman-v5",
+                  render_mode="rgb_array",
+                  mode="vision")
+    env = RewardShapingWrapper(env, enable_logging=True, log_file="shaping_reward_ppo_log.txt")
+    env = PreprocessFrame(env, width=84, height=84, force_image=True)
     env = Monitor(env)
     return env
+
 
 def train_ppo():
     """Train the PPO agent"""
     print("=" * 60)
-    print("Training PPO Agent for Pacman")
+    print("Training PPO Agent for MsPacman with OCAtari")
+    print(f"Using {N_ENVS} parallel environments with reward shaping")
     print("=" * 60)
     print("Creating environment...")
-    
-    # Create vectorized environment (PPO works better with multiple parallel envs)
-    env = DummyVecEnv([make_env for _ in range(4)])  # 4 parallel environments
+
+    # Create vectorized environment with parallel subprocesses for faster training
+    env = SubprocVecEnv([make_env for _ in range(N_ENVS)])
+    env = VecTransposeImage(env)  # Transpose (H,W,C) -> (C,H,W) for CNN
     env = VecFrameStack(env, n_stack=4)
-    
+
     # Create evaluation environment
     eval_env = DummyVecEnv([make_env])
+    eval_env = VecTransposeImage(eval_env)
     eval_env = VecFrameStack(eval_env, n_stack=4)
-    
+
     print("Initializing PPO agent...")
-    
+
     # PPO hyperparameters optimized for Atari
     model = PPO(
         "CnnPolicy",
@@ -62,16 +75,16 @@ def train_ppo():
         max_grad_norm=0.5,
         verbose=1,
         tensorboard_log="./logs/ppo/",
-        device="auto"
+        device="cuda"
     )
-    
+
     # Callbacks
     checkpoint_callback = CheckpointCallback(
         save_freq=50000,
         save_path="./models/ppo/",
-        name_prefix="pacman_ppo"
+        name_prefix="mspacman_ppo"
     )
-    
+
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path="./models/ppo/best/",
@@ -81,13 +94,13 @@ def train_ppo():
         deterministic=True,
         render=False
     )
-    
+
     print("Starting training...")
     print("Monitor progress: tensorboard --logdir=./logs/ppo/")
     print("-" * 60)
-    
+
     start_time = time.time()
-    
+
     # Train the agent
     model.learn(
         total_timesteps=1000000,
@@ -95,20 +108,21 @@ def train_ppo():
         log_interval=10,
         progress_bar=True
     )
-    
+
     training_time = time.time() - start_time
-    
+
     # Save final model
-    final_model_path = "models/ppo/pacman_ppo_final.zip"
+    final_model_path = "models/ppo/mspacman_ppo_final.zip"
     model.save(final_model_path)
-    
+
     print("\n" + "=" * 60)
     print(f"Training complete! Time: {training_time/3600:.2f} hours")
     print(f"Final model saved to {final_model_path}")
     print(f"Best model saved to models/ppo/best/")
     print("=" * 60)
-    
+
     return model
+
 
 if __name__ == "__main__":
     train_ppo()

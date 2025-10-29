@@ -1,56 +1,69 @@
 """
-Train a DQN agent to play Pacman using Stable Baselines3
+Train a DQN agent to play MsPacman using Stable Baselines3 + OCAtari
 DQN: Deep Q-Network - Value-based method
 """
 import gymnasium as gym
 import ale_py
-from stable_baselines3 import DQN
-from stable_baselines3.common.atari_wrappers import AtariWrapper
-from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
-from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv
-from stable_baselines3.common.monitor import Monitor
+import numpy as np
 import os
 import time
+import cv2
+from gymnasium import spaces
+
+from ocatari.core import OCAtari
+from stable_baselines3 import DQN
+from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
+from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, SubprocVecEnv, VecTransposeImage
+from stable_baselines3.common.monitor import Monitor
+from preprocess import PreprocessFrame
 
 # Register ALE environments
 gym.register_envs(ale_py)
+
+# Get number of CPU cores for parallel environments
+N_ENVS = min(os.cpu_count(), 20)  # Use all available cores (max 20)
 
 # Create directories for saving models and logs
 os.makedirs("models/dqn", exist_ok=True)
 os.makedirs("logs/dqn", exist_ok=True)
 
+
 def make_env():
-    """Create and wrap the Pacman environment"""
-    env = gym.make("ALE/Pacman-v5", 
-                   render_mode="rgb_array",
-                   frameskip=1)
-    env = AtariWrapper(env)
+    """Create and wrap the MsPacman environment using OCAtari"""
+    env = OCAtari("ALE/MsPacman-v5",
+                  render_mode="rgb_array",
+                  mode="vision")
+    # Preprocess frames (grayscale 84x84) to drastically reduce replay buffer memory
+    env = PreprocessFrame(env, width=84, height=84, force_image=True)
     env = Monitor(env)
     return env
 
 def train_dqn():
     """Train the DQN agent"""
     print("=" * 60)
-    print("Training DQN Agent for Pacman")
+    print("Training DQN Agent for MsPacman with OCAtari")
+    print(f"Using {N_ENVS} parallel environments")
     print("=" * 60)
     print("Creating environment...")
-    
-    # Create vectorized environment
-    env = DummyVecEnv([make_env])
+
+    # Create vectorized environment with parallel subprocesses for faster training
+    env = SubprocVecEnv([make_env for _ in range(N_ENVS)])
+    env = VecTransposeImage(env)  # Transpose (H,W,C) -> (C,H,W) for CNN
     env = VecFrameStack(env, n_stack=4)
-    
+
     # Create evaluation environment
     eval_env = DummyVecEnv([make_env])
+    eval_env = VecTransposeImage(eval_env)
     eval_env = VecFrameStack(eval_env, n_stack=4)
-    
+
     print("Initializing DQN agent...")
-    
+
     # DQN hyperparameters optimized for Atari
     model = DQN(
         "CnnPolicy",
         env,
         learning_rate=1e-4,
-        buffer_size=1000000,              # Reduced for memory
+        buffer_size=100000,
         learning_starts=50000,
         batch_size=64,
         tau=1.0,
@@ -63,16 +76,16 @@ def train_dqn():
         exploration_final_eps=0.01,
         verbose=1,
         tensorboard_log="./logs/dqn/",
-        device="cuda"
+        device="auto"
     )
-    
+
     # Callbacks
     checkpoint_callback = CheckpointCallback(
         save_freq=50000,
         save_path="./models/dqn/",
-        name_prefix="pacman_dqn"
+        name_prefix="mspacman_dqn"
     )
-    
+
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path="./models/dqn/best/",
@@ -82,13 +95,13 @@ def train_dqn():
         deterministic=True,
         render=False
     )
-    
+
     print("Starting training...")
     print("Monitor progress: tensorboard --logdir=./logs/dqn/")
     print("-" * 60)
-    
+
     start_time = time.time()
-    
+
     # Train the agent
     model.learn(
         total_timesteps=1000000,
@@ -96,19 +109,19 @@ def train_dqn():
         log_interval=10,
         progress_bar=True
     )
-    
+
     training_time = time.time() - start_time
-    
+
     # Save final model
-    final_model_path = "models/dqn/pacman_dqn_final.zip"
+    final_model_path = "models/dqn/mspacman_dqn_final.zip"
     model.save(final_model_path)
-    
+
     print("\n" + "=" * 60)
     print(f"Training complete! Time: {training_time/3600:.2f} hours")
     print(f"Final model saved to {final_model_path}")
     print(f"Best model saved to models/dqn/best/")
     print("=" * 60)
-    
+
     return model
 
 if __name__ == "__main__":

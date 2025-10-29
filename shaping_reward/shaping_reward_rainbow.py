@@ -1,10 +1,11 @@
 """
-Train a Rainbow DQN agent to play MsPacman using Stable Baselines3 + OCAtari
+Train a Rainbow DQN agent to play MsPacman using Stable Baselines3 + OCAtari with reward shaping
 Rainbow: Combines multiple DQN improvements (Double DQN, Dueling, Prioritized Experience Replay, etc.)
-Note: Rainbow is not directly available in Stable Baselines3, so we use sb3-contrib
+Note: Rainbow is not directly available in Stable Baselines3, so we use sb3-contrib (QR-DQN)
 """
 import gymnasium as gym
 import ale_py
+import numpy as np
 import os
 import time
 
@@ -18,36 +19,43 @@ except ImportError:
     from stable_baselines3 import DQN as QRDQN
 
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
-from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTransposeImage
+from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, SubprocVecEnv, VecTransposeImage
 from stable_baselines3.common.monitor import Monitor
 from preprocess import PreprocessFrame
+from environment.reward_shaping_wrapper_4 import EnhancedStabilityRewardShaper as RewardShapingWrapper
 
-# Register ALE environments
+# Đăng ký ALE environments
 gym.register_envs(ale_py)
 
-# Create directories for saving models and logs
+# Get number of CPU cores for parallel environments
+N_ENVS = min(os.cpu_count(), 20)  # Use all available cores (max 20)
+
+# Tạo thư mục lưu model và log
 os.makedirs("models/rainbow", exist_ok=True)
 os.makedirs("logs/rainbow", exist_ok=True)
 
 
+# ======= Create env =======
 def make_env():
-    """Create and wrap the MsPacman environment using OCAtari"""
     env = OCAtari("ALE/MsPacman-v5",
                   render_mode="rgb_array",
                   mode="vision")
+    env = RewardShapingWrapper(env, enable_logging=True, log_file="shaping_reward_rainbow_log.txt")
     env = PreprocessFrame(env, width=84, height=84, force_image=True)
     env = Monitor(env)
     return env
+
 
 def train_rainbow():
     """Train the Rainbow (QR-DQN) agent"""
     print("=" * 60)
     print("Training Rainbow/QR-DQN Agent for MsPacman with OCAtari")
+    print(f"Using {N_ENVS} parallel environments with reward shaping")
     print("=" * 60)
     print("Creating environment...")
 
-    # Create vectorized environment
-    env = DummyVecEnv([make_env])
+    # Create vectorized environment with parallel subprocesses for faster training
+    env = SubprocVecEnv([make_env for _ in range(N_ENVS)])
     env = VecTransposeImage(env)  # Transpose (H,W,C) -> (C,H,W) for CNN
     env = VecFrameStack(env, n_stack=4)
 
@@ -77,7 +85,7 @@ def train_rainbow():
         exploration_final_eps=0.01,
         verbose=1,
         tensorboard_log="./logs/rainbow/",
-        device="auto"
+        device="cuda"
     )
 
     # Callbacks
@@ -124,6 +132,7 @@ def train_rainbow():
     print("=" * 60)
 
     return model
+
 
 if __name__ == "__main__":
     train_rainbow()

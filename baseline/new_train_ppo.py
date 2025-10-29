@@ -13,12 +13,15 @@ from gymnasium import spaces
 from ocatari.core import OCAtari
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
-from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTransposeImage
+from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, SubprocVecEnv, VecTransposeImage
 from stable_baselines3.common.monitor import Monitor
 from preprocess import PreprocessFrame
 
 # Register ALE environments
 gym.register_envs(ale_py)
+
+# Get number of CPU cores for parallel environments
+N_ENVS = min(os.cpu_count(), 20)  # Use all available cores (max 20)
 
 # Create directories for saving models and logs
 os.makedirs("models/ppo", exist_ok=True)
@@ -38,11 +41,12 @@ def train_ppo():
     """Train the PPO agent"""
     print("=" * 60)
     print("Training PPO Agent for MsPacman with OCAtari")
+    print(f"Using {N_ENVS} parallel environments")
     print("=" * 60)
     print("Creating environment...")
 
-    # Create vectorized environment (PPO works better with multiple parallel envs)
-    env = DummyVecEnv([make_env for _ in range(4)])  # 4 parallel environments
+    # Create vectorized environment with parallel subprocesses for faster training
+    env = SubprocVecEnv([make_env for _ in range(N_ENVS)])
     env = VecTransposeImage(env)  # Transpose (H,W,C) -> (C,H,W) for CNN
     env = VecFrameStack(env, n_stack=4)
 

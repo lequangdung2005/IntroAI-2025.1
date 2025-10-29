@@ -1,49 +1,53 @@
 """
-Train an A2C agent to play MsPacman using Stable Baselines3 + OCAtari
-A2C: Advantage Actor-Critic - Policy-based method
+Train an A2C agent to play MsPacman using Stable Baselines3 + OCAtari with reward shaping
+A2C: Advantage Actor-Critic - Policy-based method with reward logging
 """
 import gymnasium as gym
 import ale_py
 import numpy as np
 import os
 import time
-import cv2
-from gymnasium import spaces
 
 from ocatari.core import OCAtari
 from stable_baselines3 import A2C
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
-from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTransposeImage
+from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, SubprocVecEnv, VecTransposeImage
 from stable_baselines3.common.monitor import Monitor
 from preprocess import PreprocessFrame
+from environment.reward_shaping_wrapper_4 import EnhancedStabilityRewardShaper as RewardShapingWrapper
 
-# Register ALE environments
+# Đăng ký ALE environments
 gym.register_envs(ale_py)
 
-# Create directories for saving models and logs
+# Get number of CPU cores for parallel environments
+N_ENVS = min(os.cpu_count(), 20)  # Use all available cores (max 20)
+
+# Tạo thư mục lưu model và log
 os.makedirs("models/a2c", exist_ok=True)
 os.makedirs("logs/a2c", exist_ok=True)
 
 
+# ======= Create env =======
 def make_env():
-    """Create and wrap the MsPacman environment using OCAtari"""
     env = OCAtari("ALE/MsPacman-v5",
                   render_mode="rgb_array",
                   mode="vision")
-    # Preprocess frames to grayscale 84x84 before monitoring/vectorization
+    env = RewardShapingWrapper(env, enable_logging=True, log_file="shaping_reward_a2c_log.txt")
     env = PreprocessFrame(env, width=84, height=84, force_image=True)
     env = Monitor(env)
     return env
+
 
 def train_a2c():
     """Train the A2C agent"""
     print("=" * 60)
     print("Training A2C Agent for MsPacman with OCAtari")
+    print(f"Using {N_ENVS} parallel environments with reward shaping")
     print("=" * 60)
     print("Creating environment...")
 
-    # Create vectorized environment (A2C works better with multiple parallel envs)
-    env = DummyVecEnv([make_env for _ in range(4)])  # 4 parallel environments
+    # Create vectorized environment with parallel subprocesses for faster training
+    env = SubprocVecEnv([make_env for _ in range(N_ENVS)])
     env = VecTransposeImage(env)  # Transpose (H,W,C) -> (C,H,W) for CNN
     env = VecFrameStack(env, n_stack=4)
 
@@ -70,7 +74,7 @@ def train_a2c():
         normalize_advantage=False,
         verbose=1,
         tensorboard_log="./logs/a2c/",
-        device="auto"
+        device="cuda"
     )
 
     # Callbacks
@@ -117,6 +121,7 @@ def train_a2c():
     print("=" * 60)
 
     return model
+
 
 if __name__ == "__main__":
     train_a2c()

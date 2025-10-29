@@ -1,5 +1,5 @@
 """
-Train a DQN agent to play MsPacman using Stable Baselines3 + OCAtari
+Train a DQN agent to play MsPacman using Stable Baselines3 + OCAtari with reward shaping
 DQN: Deep Q-Network - Value-based method
 """
 import gymnasium as gym
@@ -7,43 +7,47 @@ import ale_py
 import numpy as np
 import os
 import time
-import cv2
-from gymnasium import spaces
 
 from ocatari.core import OCAtari
 from stable_baselines3 import DQN
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
-from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTransposeImage
+from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, SubprocVecEnv, VecTransposeImage
 from stable_baselines3.common.monitor import Monitor
 from preprocess import PreprocessFrame
+from environment.reward_shaping_wrapper_4 import EnhancedStabilityRewardShaper as RewardShapingWrapper
 
-# Register ALE environments
+# Đăng ký ALE environments
 gym.register_envs(ale_py)
 
-# Create directories for saving models and logs
+# Get number of CPU cores for parallel environments
+N_ENVS = min(os.cpu_count(), 20)  # Use all available cores (max 20)
+
+# Tạo thư mục lưu model và log
 os.makedirs("models/dqn", exist_ok=True)
 os.makedirs("logs/dqn", exist_ok=True)
 
 
+# ======= Create env =======
 def make_env():
-    """Create and wrap the MsPacman environment using OCAtari"""
     env = OCAtari("ALE/MsPacman-v5",
                   render_mode="rgb_array",
                   mode="vision")
-    # Preprocess frames (grayscale 84x84) to drastically reduce replay buffer memory
+    env = RewardShapingWrapper(env, enable_logging=True, log_file="shaping_reward_dqn_log.txt")
     env = PreprocessFrame(env, width=84, height=84, force_image=True)
     env = Monitor(env)
     return env
+
 
 def train_dqn():
     """Train the DQN agent"""
     print("=" * 60)
     print("Training DQN Agent for MsPacman with OCAtari")
+    print(f"Using {N_ENVS} parallel environments with reward shaping")
     print("=" * 60)
     print("Creating environment...")
 
-    # Create vectorized environment
-    env = DummyVecEnv([make_env])
+    # Create vectorized environment with parallel subprocesses for faster training
+    env = SubprocVecEnv([make_env for _ in range(N_ENVS)])
     env = VecTransposeImage(env)  # Transpose (H,W,C) -> (C,H,W) for CNN
     env = VecFrameStack(env, n_stack=4)
 
@@ -72,7 +76,7 @@ def train_dqn():
         exploration_final_eps=0.01,
         verbose=1,
         tensorboard_log="./logs/dqn/",
-        device="auto"
+        device="cuda"
     )
 
     # Callbacks
@@ -119,6 +123,7 @@ def train_dqn():
     print("=" * 60)
 
     return model
+
 
 if __name__ == "__main__":
     train_dqn()

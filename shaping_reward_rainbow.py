@@ -19,13 +19,16 @@ except ImportError:
     from stable_baselines3 import DQN as QRDQN
 
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
-from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTransposeImage
+from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, SubprocVecEnv, VecTransposeImage
 from stable_baselines3.common.monitor import Monitor
 from preprocess import PreprocessFrame
-from reward_shaping_wrapper_4 import EnhancedStabilityRewardShaper as RewardShapingWrapper
+from environment.reward_shaping_wrapper_4 import EnhancedStabilityRewardShaper as RewardShapingWrapper
 
 # Đăng ký ALE environments
 gym.register_envs(ale_py)
+
+# Get number of CPU cores for parallel environments
+N_ENVS = min(os.cpu_count(), 20)  # Use all available cores (max 20)
 
 # Tạo thư mục lưu model và log
 os.makedirs("models/rainbow", exist_ok=True)
@@ -47,11 +50,12 @@ def train_rainbow():
     """Train the Rainbow (QR-DQN) agent"""
     print("=" * 60)
     print("Training Rainbow/QR-DQN Agent for MsPacman with OCAtari")
+    print(f"Using {N_ENVS} parallel environments with reward shaping")
     print("=" * 60)
     print("Creating environment...")
 
-    # Create vectorized environment
-    env = DummyVecEnv([make_env])
+    # Create vectorized environment with parallel subprocesses for faster training
+    env = SubprocVecEnv([make_env for _ in range(N_ENVS)])
     env = VecTransposeImage(env)  # Transpose (H,W,C) -> (C,H,W) for CNN
     env = VecFrameStack(env, n_stack=4)
 
