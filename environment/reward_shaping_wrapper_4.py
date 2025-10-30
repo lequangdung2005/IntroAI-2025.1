@@ -45,7 +45,7 @@ class AdvancedRewardShaper(gym.Wrapper):
     STUCK_PENALTY = -0.1  # Penalty coefficient for stuck behavior (cap: -0.1*25=-2.5)
     
     # === LIFE MANAGEMENT ===
-    LIFE_LOSS_PENALTY = -25.0  # REDUCED: From -50.0 to -25.0 (less harsh)
+    LIFE_LOSS_PENALTY = -2.0  # BALANCED: Matches normal bonus_sum range [-2, +2]
     ENABLE_LIFE_LOSS_TRACKING = True
     
     # === REWARD NORMALIZATION (Fixed logic) ===
@@ -302,11 +302,11 @@ class AdvancedRewardShaper(gym.Wrapper):
             is_ghost_nearby = penalty_nearing_ghost < -1.0
             
             if is_stuck and is_ghost_nearby:
-                # BYPASS NORMALIZATION for emergency situation - apply raw penalties
-                emergency_penalty = penalty_nearing_ghost + movement_bonus  # Raw values without normalization
-                shaped_reward = scaled_base_reward + emergency_penalty
+                # EMERGENCY NORMALIZATION: Use wider range [-5, +5] instead of [-2, +2]
+                emergency_normalized = np.tanh(bonus_sum / self.SHAPING_NORMALIZATION_SCALE) * 5.0
+                shaped_reward = scaled_base_reward + emergency_normalized
             else:
-                # Normal normalization
+                # Normal normalization [-2, +2]
                 normalized_bonus = np.tanh(bonus_sum / self.SHAPING_NORMALIZATION_SCALE) * 2.0
                 shaped_reward = scaled_base_reward + normalized_bonus
         else:

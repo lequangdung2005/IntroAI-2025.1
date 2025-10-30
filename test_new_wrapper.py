@@ -254,7 +254,7 @@ class DetailedRewardLogger(AdvancedRewardShaper):
         emergency_escape = is_stuck and is_ghost_nearby
         
         if emergency_escape:
-            print(f"🆘 EMERGENCY ESCAPE ACTIVATED! Stuck penalty: {movement_bonus:.1f} + Ghost penalty: {penalty_nearing_ghost:.1f}")
+            print(f"🆘 EMERGENCY NORMALIZATION! Wider range [-5,+5] instead of [-2,+2]")
         
         # Life loss detection for logging
         life_lost = info_final.get('life_lost', False)
@@ -337,11 +337,11 @@ class DetailedRewardLogger(AdvancedRewardShaper):
             
             # Check and log emergency escape
             if emergency_escape:
-                emergency_penalty = penalty_nearing_ghost + movement_bonus
-                f.write(f"🆘 EMERGENCY ESCAPE ACTIVATED!\n")
+                emergency_normalized = np.tanh(bonus_sum / self.SHAPING_NORMALIZATION_SCALE) * 5.0
+                f.write(f"🆘 EMERGENCY NORMALIZATION ACTIVATED!\n")
                 f.write(f"   - Stuck penalty: {movement_bonus:.4f}\n")
                 f.write(f"   - Ghost penalty: {penalty_nearing_ghost:.4f}\n")
-                f.write(f"   - Raw emergency penalty: {emergency_penalty:.4f} (BYPASSING NORMALIZATION)\n")
+                f.write(f"   - Emergency normalized (x5.0): {emergency_normalized:.4f} (instead of x2.0)\n")
             elif self.ENABLE_REWARD_NORMALIZATION:
                 normalized = np.tanh(bonus_sum / self.SHAPING_NORMALIZATION_SCALE) * 2.0
                 f.write(f"Normalized Bonus (tanh): {normalized:.4f}\n")

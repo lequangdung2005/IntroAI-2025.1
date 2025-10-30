@@ -33,7 +33,7 @@ os.makedirs(os.path.join(PROJECT_ROOT, "logs/dqn"), exist_ok=True)
 # ======= Create env =======
 def make_env():
     env = OCAtari("ALE/MsPacman-v5",
-                  render_mode="human",
+                  render_mode="rgb_array",
                   mode="both")
     env = RewardShapingWrapper(env, enable_logging=True, 
                               log_file=os.path.join(PROJECT_ROOT, "shaping_reward_dqn_log.txt"))
@@ -80,7 +80,7 @@ def train_dqn():
         exploration_final_eps=0.01,
         verbose=1,
         tensorboard_log=os.path.join(PROJECT_ROOT, "logs/dqn/"),
-        device="cuda"
+        device="mps"
     )
 
     # Callbacks
@@ -108,7 +108,7 @@ def train_dqn():
 
     # Train the agent
     model.learn(
-        total_timesteps=4000000,
+        total_timesteps=10000000,
         callback=[checkpoint_callback, eval_callback],
         log_interval=10,
         progress_bar=True
