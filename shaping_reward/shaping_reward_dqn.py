@@ -20,7 +20,7 @@ from environment.reward_shaping_wrapper_4 import AdvancedRewardShaper as RewardS
 gym.register_envs(ale_py)
 
 # Get number of CPU cores for parallel environments
-N_ENVS = min(os.cpu_count(), 12)  # Use all available cores (max 20)
+N_ENVS = min(os.cpu_count(), 1)  # Use all available cores (max 20)
 
 # Get project root directory (parent of shaping_reward/)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -108,7 +108,7 @@ def train_dqn():
 
     # Train the agent
     model.learn(
-        total_timesteps=10000000,
+        total_timesteps=1000000,
         callback=[checkpoint_callback, eval_callback],
         log_interval=10,
         progress_bar=True
