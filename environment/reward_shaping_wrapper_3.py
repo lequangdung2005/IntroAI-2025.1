@@ -45,7 +45,7 @@ class StabilityFixedRewardShaper(gym.Wrapper):
     
     # NEW: Life loss penalty
     LIFE_LOSS_PENALTY = -50.0  # Significant penalty for dying
-    TERMINATE_ON_LIFE_LOSS = True  # End episode when losing a life
+    ENABLE_LIFE_LOSS_TRACKING = True  # Track life losses and apply penalty (but don't terminate episode)
     
     # NEW: Reward normalization
     ENABLE_REWARD_NORMALIZATION = True
@@ -92,10 +92,13 @@ class StabilityFixedRewardShaper(gym.Wrapper):
         # Reset powerpill camping tracking
         self.powerpill_min_distances = {}
         
-        # Initialize life tracking
-        self.prev_lives = info.get('lives', None)
-        if self.prev_lives is None and hasattr(self.env.unwrapped, 'ale'):
-            self.prev_lives = self.env.unwrapped.ale.lives()
+        # Initialize life tracking (only if enabled)
+        if self.ENABLE_LIFE_LOSS_TRACKING:
+            self.prev_lives = info.get('lives', None)
+            if self.prev_lives is None and hasattr(self.env.unwrapped, 'ale'):
+                self.prev_lives = self.env.unwrapped.ale.lives()
+        else:
+            self.prev_lives = None
         
         return obs, info
     
@@ -147,42 +150,52 @@ class StabilityFixedRewardShaper(gym.Wrapper):
             is_powered_up = self.is_powered_up()
             
             # 1. Bonus for approaching PowerPill (when not powered up) with anti-camping
+            # FIXED: Only give bonus for CLOSEST PowerPill
             powerpills = [o for o in objects if getattr(o, "category", None) == "PowerPill"]
             if powerpills and not is_powered_up:
-                # Clean up old powerpill positions that are no longer there
-                current_pill_positions = {(int(o.x), int(o.y)) for o in powerpills}
-                self.powerpill_min_distances = {
-                    pos: dist for pos, dist in self.powerpill_min_distances.items()
-                    if pos in current_pill_positions
-                }
-                
+                # Find closest PowerPill
+                closest_pill = None
+                closest_dist = float('inf')
                 for pill in powerpills:
-                    pill_pos = (int(pill.x), int(pill.y))
                     dist = np.linalg.norm([px - pill.x, py - pill.y])
+                    if dist < closest_dist:
+                        closest_dist = dist
+                        closest_pill = pill
+                
+                if closest_pill is not None:
+                    # Clean up tracking for PowerPills that are no longer closest
+                    current_pill_positions = {(int(o.x), int(o.y)) for o in powerpills}
+                    closest_pill_pos = (int(closest_pill.x), int(closest_pill.y))
                     
-                    # Check if in camping zone (within POWERPILL_CAMPING_RADIUS)
-                    if dist <= self.POWERPILL_CAMPING_RADIUS:
+                    # Keep only tracking for current closest pill and existing pills
+                    self.powerpill_min_distances = {
+                        pos: dist for pos, dist in self.powerpill_min_distances.items()
+                        if pos in current_pill_positions
+                    }
+                    
+                    # Apply anti-camping logic only to closest PowerPill
+                    if closest_dist <= self.POWERPILL_CAMPING_RADIUS:
                         # Inside camping zone - check if making progress
-                        if pill_pos not in self.powerpill_min_distances:
-                            # First time entering camping zone for this pill
-                            self.powerpill_min_distances[pill_pos] = dist
+                        if closest_pill_pos not in self.powerpill_min_distances:
+                            # First time entering camping zone for closest pill
+                            self.powerpill_min_distances[closest_pill_pos] = closest_dist
                             # Give bonus for first entry
-                            bonus_powerpill_raw += 10.0 * np.exp(-dist/self.POWERPILL_RADIUS)
+                            bonus_powerpill_raw += 10.0 * np.exp(-closest_dist/self.POWERPILL_RADIUS)
                         else:
                             # Already in camping zone - check progress
-                            min_dist = self.powerpill_min_distances[pill_pos]
-                            if dist < min_dist - self.POWERPILL_CAMPING_THRESHOLD:
+                            min_dist = self.powerpill_min_distances[closest_pill_pos]
+                            if closest_dist < min_dist - self.POWERPILL_CAMPING_THRESHOLD:
                                 # Made significant progress closer - update and reward
-                                self.powerpill_min_distances[pill_pos] = dist
-                                bonus_powerpill_raw += 10.0 * np.exp(-dist/self.POWERPILL_RADIUS)
+                                self.powerpill_min_distances[closest_pill_pos] = closest_dist
+                                bonus_powerpill_raw += 10.0 * np.exp(-closest_dist/self.POWERPILL_RADIUS)
                             # else: No bonus - camping detected!
                     else:
                         # Outside camping zone - normal distance bonus
                         # Reset tracker when exiting camping zone
-                        if pill_pos in self.powerpill_min_distances:
-                            del self.powerpill_min_distances[pill_pos]
+                        if closest_pill_pos in self.powerpill_min_distances:
+                            del self.powerpill_min_distances[closest_pill_pos]
                         
-                        bonus_powerpill_raw += 10.0 * np.exp(-dist/self.POWERPILL_RADIUS)
+                        bonus_powerpill_raw += 10.0 * np.exp(-closest_dist/self.POWERPILL_RADIUS)
             
             # 2. Bonus for chasing ghosts OR penalty for being near ghosts
             ghosts = [o for o in objects if getattr(o, "category", None) == "Ghost"]
@@ -277,21 +290,30 @@ class StabilityFixedRewardShaper(gym.Wrapper):
                         f"shaped_reward: {shaped_reward:.3f}\n"
                     )
         
-        # NEW: Check for life loss and apply penalty + termination
-        if self.TERMINATE_ON_LIFE_LOSS:
+        # NEW: Check for life loss and apply penalty (only if enabled)
+        if self.ENABLE_LIFE_LOSS_TRACKING:
             current_lives = info.get('lives', None)
             if current_lives is None and hasattr(self.env.unwrapped, 'ale'):
                 current_lives = self.env.unwrapped.ale.lives()
             
             if self.prev_lives is not None and current_lives is not None:
                 if current_lives < self.prev_lives:
-                    # Lost a life - apply heavy penalty and terminate
+                    # Lost a life - apply heavy penalty but DON'T terminate
+                    # This allows agent to learn 1 life = 1 episode through info flag
                     shaped_reward += self.LIFE_LOSS_PENALTY
-                    terminated = True
+                    info['life_lost'] = True  # Signal to agent that life was lost
+                    # terminated stays False - game continues without reset
                     if self.enable_logging:
                         with open(self.log_file, "a") as f:
                             f.write(f"[LIFE LOST] Lives: {self.prev_lives} -> {current_lives}, Penalty: {self.LIFE_LOSS_PENALTY}\n")
+                else:
+                    info['life_lost'] = False
+            else:
+                info['life_lost'] = False
             
             self.prev_lives = current_lives
+        else:
+            # Life loss tracking disabled - no penalty, no tracking
+            info['life_lost'] = False
         
         return obs, shaped_reward, terminated, truncated, info
