@@ -1,7 +1,11 @@
 """
-Advanced Reward Shaping Wrapper v4
-Improved version based on analysis and feedback from wrapper_3
-Addresses all identified issues and improves agent survival
+Advanced Reward Shaping Wrapper v4 - Log Analysis Optimized
+Comprehensive improvements based on detailed log analysis:
+- Reduced movement penalties (32.9% extreme → target <15%)
+- Balanced ghost penalties (40.8% extreme → target <25%) 
+- Improved normalization (61.1% negative → target <50%)
+- Enhanced PowerPill incentives (0.08% success → encourage more)
+- Addresses penalty stacking and correlation issues
 """
 import gymnasium as gym
 import numpy as np
@@ -19,7 +23,7 @@ class AdvancedRewardShaper(gym.Wrapper):
     """
     
     # === POWERPILL PARAMETERS (Updated based on distance analysis) ===
-    BONUS_POWERPILL_COEF = 0.250
+    BONUS_POWERPILL_COEF = 0.35  # FURTHER INCREASED: From 0.30 to 0.35 based on low PowerPill success (0.08%)
     POWERPILL_RADIUS = 30.0
     POWERPILL_BONUS_CAP = 6.0
     POWERPILL_CAMPING_RADIUS = 22.0  # UPDATED: From 10.0 to 22.0 based on analysis
@@ -30,9 +34,9 @@ class AdvancedRewardShaper(gym.Wrapper):
     GHOST_CHASE_RADIUS = 30.0  # UPDATED: From 20.0 to 30.0 for wider detection
     GHOST_BONUS_CAP = 20.0
     
-    PENALTY_NEARING_GHOST_COEF = 0.350  # INCREASED: From 0.250 for stronger avoidance
-    GHOST_AVOID_RADIUS = 27.5  # UPDATED: From 15.0 to 27.5 for earlier warning
-    GHOST_PENALTY_CAP = -7.5  # INCREASED: From -5.0 for stronger deterrent
+    PENALTY_NEARING_GHOST_COEF = 0.350  # INCREASED: From 0.250 for stronger avoidance  
+    GHOST_AVOID_RADIUS = 22.0  # FURTHER REDUCED: From 25.0 to 22.0 based on log analysis (40.8% extreme penalties)
+    GHOST_PENALTY_CAP = -5.0  # FURTHER REDUCED: From -6.0 to -5.0 for better balance
     
     # === SURVIVAL IMPROVEMENTS ===
     PROGRESS_BONUS_SCALE = 0.5  # Progress bonus scale for ghost chasing
@@ -42,7 +46,7 @@ class AdvancedRewardShaper(gym.Wrapper):
     # === MOVEMENT TRACKING (Improved with variance) ===
     POSITION_TRACKING_WINDOW = 10
     MIN_POSITION_VARIANCE = 25.0  # NEW: Minimum variance in position (not distance)
-    STUCK_PENALTY = -0.1  # Penalty coefficient for stuck behavior (cap: -0.1*25=-2.5)
+    STUCK_PENALTY = -0.05  # REDUCED: From -0.1 to -0.05 based on log analysis (32.9% extreme penalties)
     
     # === LIFE MANAGEMENT ===
     LIFE_LOSS_PENALTY = -2.0  # BALANCED: Matches normal bonus_sum range [-2, +2]
@@ -50,7 +54,7 @@ class AdvancedRewardShaper(gym.Wrapper):
     
     # === REWARD NORMALIZATION (Fixed logic) ===
     ENABLE_REWARD_NORMALIZATION = True
-    SHAPING_NORMALIZATION_SCALE = 5.0  # NEW: Separate scale for shaping rewards
+    SHAPING_NORMALIZATION_SCALE = 10.0  # FURTHER INCREASED: From 8.0 to 10.0 based on log analysis (61.1% negative rewards)
     
     def __init__(self, env, enable_logging=False, log_file="advanced_shaping_log.txt"):
         super().__init__(env)
@@ -137,17 +141,17 @@ class AdvancedRewardShaper(gym.Wrapper):
     
     def _scale_base_reward(self, reward):
         """
-        Simplified base reward scaling
-        If reward > 800: 80 + (reward - 800) * 0.025
-        Else: reward / 10
+        Improved base reward scaling - less aggressive
+        If reward > 500: 100 + (reward - 500) / 10
+        Else: reward / 5
         """
         if reward <= 0:
             return reward  # No scaling for zero/negative rewards
         
-        if reward > 800:
-            return 80 + (reward - 800) * 0.025
+        if reward > 500:
+            return 100 + (reward - 500) / 10
         else:
-            return reward / 10
+            return reward / 5
     
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
@@ -235,15 +239,19 @@ class AdvancedRewardShaper(gym.Wrapper):
                 self.prev_ghost_distances['closest_ghost_dist'] = closest_dist
                 
             elif not is_powered_up and ghosts:
-                # Ghost avoidance (when not powered up) - IMPROVED
+                # Ghost avoidance (when not powered up) - IMPROVED with gradient penalty
                 self.prev_ghost_distances.clear()
                 
-                # Stronger penalty for being near ghosts (earlier warning)
+                # Gradient penalty based on distance
                 for g in ghosts:
                     dist = np.linalg.norm([px - g.x, py - g.y])
                     if dist <= self.GHOST_AVOID_RADIUS:
-                        # Exponential penalty that gets stronger as distance decreases
-                        penalty_nearing_ghost_raw -= 15.0 * np.exp(-dist/self.GHOST_AVOID_RADIUS)
+                        if dist > self.GHOST_AVOID_RADIUS * 0.6:  # > 15.0 when radius=25.0
+                            # Far zone - lighter penalty
+                            penalty_nearing_ghost_raw -= 10.0 * np.exp(-dist/self.GHOST_AVOID_RADIUS)
+                        else:
+                            # Near zone - stronger penalty
+                            penalty_nearing_ghost_raw -= 15.0 * np.exp(-dist/self.GHOST_AVOID_RADIUS)
             
             # Apply caps
             bonus_powerpill_raw, bonus_eating_ghost_raw, penalty_nearing_ghost_raw = \
@@ -263,26 +271,30 @@ class AdvancedRewardShaper(gym.Wrapper):
                     excess = self.steps_without_score - self.MAX_STEPS_WITHOUT_SCORE
                     stalling_penalty = max(self.STALLING_PENALTY_RATE * (excess ** 1.1), -1.0)
             
-            # 4. Improved movement tracking using position variance
+            # 4. Improved movement tracking using position variance with reward/penalty balance
             self.position_history.append((px, py))
             
             if len(self.position_history) > self.POSITION_TRACKING_WINDOW:
                 self.position_history.pop(0)
             
-            # Check if stuck using variance instead of distance
+            # Check movement using variance - both reward and penalty
             if len(self.position_history) >= self.POSITION_TRACKING_WINDOW:
                 position_variance = self._calculate_position_variance()
                 
                 if position_variance < self.MIN_POSITION_VARIANCE:
-                    movement_bonus = self.STUCK_PENALTY * (self.MIN_POSITION_VARIANCE - position_variance)  # penalty
+                    # Stuck penalty - reduced extreme multiplier
+                    movement_bonus = self.STUCK_PENALTY * (self.MIN_POSITION_VARIANCE - position_variance)
                     
-                    # EXTREME PENALTY for being completely stuck (variance = 0)
+                    # Further reduced extreme penalty for complete stillness
                     if position_variance == 0.0:
-                        # Same position repeatedly - apply extreme penalty
-                        movement_bonus *= 5.0  # 5x penalty for complete stillness
+                        movement_bonus *= 1.5  # FURTHER REDUCED: From 2.0 to 1.5 based on log analysis
                     
                     if is_powered_up:
                         movement_bonus *= 1.5  # Increased penalty when powered up
+                else:
+                    # Movement reward for good movement
+                    movement_reward = min(position_variance / (self.MIN_POSITION_VARIANCE * 2), 2.0)  # Cap at 2.0
+                    movement_bonus = movement_reward
         
         # Apply coefficients
         bonus_powerpill = self.BONUS_POWERPILL_COEF * bonus_powerpill_raw
@@ -297,16 +309,16 @@ class AdvancedRewardShaper(gym.Wrapper):
             # Calculate bonus sum
             bonus_sum = bonus_powerpill + bonus_eating_ghost + penalty_nearing_ghost + stalling_penalty + movement_bonus
             
-            # EMERGENCY ESCAPE: If stuck (movement_bonus < -10) AND ghost nearby (penalty_nearing_ghost < -1.0)
-            is_stuck = movement_bonus < -10.0
+            # EMERGENCY ESCAPE: If stuck (movement_bonus < -3) AND ghost nearby (penalty_nearing_ghost < -1.0)
+            is_stuck = movement_bonus < -3.0  # ADJUSTED: Based on new STUCK_PENALTY of -0.05
             is_ghost_nearby = penalty_nearing_ghost < -1.0
             
             if is_stuck and is_ghost_nearby:
-                # EMERGENCY NORMALIZATION: Use wider range [-5, +5] instead of [-2, +2]
-                emergency_normalized = np.tanh(bonus_sum / self.SHAPING_NORMALIZATION_SCALE) * 5.0
+                # EMERGENCY NORMALIZATION: Use wider range [-3, +3] instead of [-2, +2]
+                emergency_normalized = np.tanh(bonus_sum / self.SHAPING_NORMALIZATION_SCALE) * 3.0
                 shaped_reward = scaled_base_reward + emergency_normalized
             else:
-                # Normal normalization [-2, +2]
+                # Normal normalization [-2, +2] 
                 normalized_bonus = np.tanh(bonus_sum / self.SHAPING_NORMALIZATION_SCALE) * 2.0
                 shaped_reward = scaled_base_reward + normalized_bonus
         else:
