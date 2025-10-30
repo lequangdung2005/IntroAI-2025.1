@@ -80,7 +80,7 @@ def train_dqn():
         exploration_final_eps=0.01,
         verbose=1,
         tensorboard_log=os.path.join(PROJECT_ROOT, "logs/dqn/"),
-        device="mps"
+        device="cuda"
     )
 
     # Callbacks
