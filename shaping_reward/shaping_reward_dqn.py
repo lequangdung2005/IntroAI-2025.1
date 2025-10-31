@@ -108,7 +108,7 @@ def train_dqn():
 
     # Train the agent
     model.learn(
-        total_timesteps=4000000,
+        total_timesteps=1000000,
         callback=[checkpoint_callback, eval_callback],
         log_interval=10,
         progress_bar=True
