@@ -309,8 +309,8 @@ class AdvancedRewardShaper(gym.Wrapper):
             # Calculate bonus sum
             bonus_sum = bonus_powerpill + bonus_eating_ghost + penalty_nearing_ghost + stalling_penalty + movement_bonus
             
-            # EMERGENCY ESCAPE: If stuck (movement_bonus < -3) AND ghost nearby (penalty_nearing_ghost < -1.0)
-            is_stuck = movement_bonus < -3.0  # ADJUSTED: Based on new STUCK_PENALTY of -0.05
+            # EMERGENCY ESCAPE: If stuck (movement_bonus < -1) AND ghost nearby (penalty_nearing_ghost < -1.0)
+            is_stuck = movement_bonus < -1.0  # FIXED: Adjusted for new STUCK_PENALTY of -0.05 (max penalty ~-1.875)
             is_ghost_nearby = penalty_nearing_ghost < -1.0
             
             if is_stuck and is_ghost_nearby:
