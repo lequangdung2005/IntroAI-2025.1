@@ -44,7 +44,7 @@ class AdvancedRewardShaper(gym.Wrapper):
     STALLING_PENALTY_RATE = -0.010  # REDUCED: From -0.015 to be less harsh
     
     # === MOVEMENT TRACKING (Improved with variance) ===
-    POSITION_TRACKING_WINDOW = 10
+    POSITION_TRACKING_WINDOW = 7  # REDUCED: From 10 to 7 for faster stuck detection
     MIN_POSITION_VARIANCE = 25.0  # NEW: Minimum variance in position (not distance)
     STUCK_PENALTY = -0.05  # REDUCED: From -0.1 to -0.05 based on log analysis (32.9% extreme penalties)
     
@@ -83,10 +83,14 @@ class AdvancedRewardShaper(gym.Wrapper):
         self.prev_lives = None
         
     def reset(self, **kwargs):
-        """Reset environment and tracking variables"""
+        """Reset environment and skip loading screen"""
         obs, info = self.env.reset(**kwargs)
         
-        # Reset all tracking
+        # SKIP 64 NOOP steps at game start (loading screen)
+        for i in range(64):
+            obs, _, _, _, info = self.env.step(0)  # NOOP action, not saved to replay buffer
+        
+        # Reset all tracking AFTER loading skip
         self.steps_without_score = 0
         self.position_history = []
         self.prev_position = None
@@ -281,6 +285,20 @@ class AdvancedRewardShaper(gym.Wrapper):
             if len(self.position_history) >= self.POSITION_TRACKING_WINDOW:
                 position_variance = self._calculate_position_variance()
                 
+                # Check for escape bonus (was stuck, now moving)
+                escape_bonus = 0.0
+                if len(self.position_history) >= 2:
+                    # Calculate previous variance (without current position)
+                    prev_positions = self.position_history[:-1]
+                    if len(prev_positions) >= self.POSITION_TRACKING_WINDOW - 1:
+                        prev_variance = np.var([p[0] for p in prev_positions[-(self.POSITION_TRACKING_WINDOW-1):]]) + \
+                                      np.var([p[1] for p in prev_positions[-(self.POSITION_TRACKING_WINDOW-1):]])
+                        
+                        # ESCAPE DETECTION: Was stuck, now moving
+                        if (prev_variance < self.MIN_POSITION_VARIANCE and 
+                            position_variance >= self.MIN_POSITION_VARIANCE):
+                            escape_bonus = 0.5
+                
                 if position_variance < self.MIN_POSITION_VARIANCE:
                     # Stuck penalty - reduced extreme multiplier
                     movement_bonus = self.STUCK_PENALTY * (self.MIN_POSITION_VARIANCE - position_variance)
@@ -295,6 +313,9 @@ class AdvancedRewardShaper(gym.Wrapper):
                     # Movement reward for good movement - INCREASED cap
                     movement_reward = min(position_variance / (self.MIN_POSITION_VARIANCE * 1.5), 2.5)  # INCREASED: Cap from 2.0 to 2.5
                     movement_bonus = movement_reward
+                
+                # Apply escape bonus after base calculation
+                movement_bonus += escape_bonus
         
         # Apply coefficients
         bonus_powerpill = self.BONUS_POWERPILL_COEF * bonus_powerpill_raw
@@ -314,8 +335,8 @@ class AdvancedRewardShaper(gym.Wrapper):
             is_ghost_nearby = penalty_nearing_ghost < -1.0
             
             if is_stuck and is_ghost_nearby:
-                # EMERGENCY NORMALIZATION: Use wider range [-3, +3] instead of [-2, +2]
-                emergency_normalized = np.tanh(bonus_sum / self.SHAPING_NORMALIZATION_SCALE) * 3.0
+                # EMERGENCY NORMALIZATION: Use wider range [-3.2, +3.2] instead of [-2, +2]
+                emergency_normalized = np.tanh(bonus_sum / self.SHAPING_NORMALIZATION_SCALE) * 3.2
                 shaped_reward = scaled_base_reward + emergency_normalized
             else:
                 # Normal normalization [-2, +2] 
@@ -324,7 +345,7 @@ class AdvancedRewardShaper(gym.Wrapper):
         else:
             shaped_reward = reward + bonus_powerpill + bonus_eating_ghost + penalty_nearing_ghost + stalling_penalty + movement_bonus
         
-        # Life loss detection (reduced penalty)
+        # Life loss detection with loading skip
         if self.ENABLE_LIFE_LOSS_TRACKING:
             current_lives = info.get('lives', None)
             if current_lives is None and hasattr(self.env.unwrapped, 'ale'):
@@ -334,9 +355,18 @@ class AdvancedRewardShaper(gym.Wrapper):
                 if current_lives < self.prev_lives:
                     shaped_reward += self.LIFE_LOSS_PENALTY
                     info['life_lost'] = True
+                    
+                    # SKIP 64 NOOP steps after life loss (loading screen)
+                    for i in range(64):
+                        obs, _, _, _, info = self.env.step(0)  # NOOP action, not saved to replay buffer
+                    
+                    # Reset some tracking after life loss
+                    self.position_history = []
+                    self.steps_without_score = 0
+                    
                     if self.enable_logging:
                         with open(self.log_file, "a") as f:
-                            f.write(f"[LIFE LOST] Lives: {self.prev_lives} -> {current_lives}, Penalty: {self.LIFE_LOSS_PENALTY}\n")
+                            f.write(f"[LIFE LOST] Lives: {self.prev_lives} -> {current_lives}, Penalty: {self.LIFE_LOSS_PENALTY}, Skipped 64 loading steps\n")
                 else:
                     info['life_lost'] = False
             else:
