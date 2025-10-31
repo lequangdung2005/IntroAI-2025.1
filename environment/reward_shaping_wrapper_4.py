@@ -23,9 +23,9 @@ class AdvancedRewardShaper(gym.Wrapper):
     """
     
     # === POWERPILL PARAMETERS (Updated based on distance analysis) ===
-    BONUS_POWERPILL_COEF = 0.35  # FURTHER INCREASED: From 0.30 to 0.35 based on low PowerPill success (0.08%)
+    BONUS_POWERPILL_COEF = 0.40  # INCREASED: From 0.35 to 0.40 for stronger PowerPill incentive
     POWERPILL_RADIUS = 30.0
-    POWERPILL_BONUS_CAP = 6.0
+    POWERPILL_BONUS_CAP = 8.0  # INCREASED: From 6.0 to 8.0 for higher positive reward
     POWERPILL_CAMPING_RADIUS = 22.0  # UPDATED: From 10.0 to 22.0 based on analysis
     POWERPILL_CAMPING_THRESHOLD = 1.5  # UPDATED: From 1.0 to 1.5 for better progress detection
     
@@ -49,12 +49,12 @@ class AdvancedRewardShaper(gym.Wrapper):
     STUCK_PENALTY = -0.05  # REDUCED: From -0.1 to -0.05 based on log analysis (32.9% extreme penalties)
     
     # === LIFE MANAGEMENT ===
-    LIFE_LOSS_PENALTY = -2.0  # BALANCED: Matches normal bonus_sum range [-2, +2]
+    LIFE_LOSS_PENALTY = -1.5  # REDUCED: From -2.0 to -1.5 for less harsh punishment
     ENABLE_LIFE_LOSS_TRACKING = True
     
     # === REWARD NORMALIZATION (Fixed logic) ===
     ENABLE_REWARD_NORMALIZATION = True
-    SHAPING_NORMALIZATION_SCALE = 10.0  # FURTHER INCREASED: From 8.0 to 10.0 based on log analysis (61.1% negative rewards)
+    SHAPING_NORMALIZATION_SCALE = 6.0  # REDUCED: From 8.0 to 6.0 to reduce negative bias
     
     def __init__(self, env, enable_logging=False, log_file="advanced_shaping_log.txt"):
         super().__init__(env)
@@ -141,17 +141,17 @@ class AdvancedRewardShaper(gym.Wrapper):
     
     def _scale_base_reward(self, reward):
         """
-        Improved base reward scaling - less aggressive
-        If reward > 500: 100 + (reward - 500) / 10
-        Else: reward / 5
+        Base reward scaling - less aggressive to let base reward impact more
+        If reward > 800: 400 + (reward - 800) * 0.25
+        Else: reward / 2  # CHANGED: From /5 to /2 for stronger base reward impact
         """
         if reward <= 0:
             return reward  # No scaling for zero/negative rewards
         
-        if reward > 500:
-            return 100 + (reward - 500) / 10
+        if reward > 800:
+            return 400 + (reward - 800) * 0.25
         else:
-            return reward / 5
+            return reward / 2  # Stronger base reward impact
     
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
@@ -292,8 +292,8 @@ class AdvancedRewardShaper(gym.Wrapper):
                     if is_powered_up:
                         movement_bonus *= 1.5  # Increased penalty when powered up
                 else:
-                    # Movement reward for good movement
-                    movement_reward = min(position_variance / (self.MIN_POSITION_VARIANCE * 2), 2.0)  # Cap at 2.0
+                    # Movement reward for good movement - INCREASED cap
+                    movement_reward = min(position_variance / (self.MIN_POSITION_VARIANCE * 1.5), 2.5)  # INCREASED: Cap from 2.0 to 2.5
                     movement_bonus = movement_reward
         
         # Apply coefficients
