@@ -45,8 +45,8 @@ class AdvancedRewardShaper(gym.Wrapper):
     
     # === MOVEMENT TRACKING (Improved with variance) ===
     POSITION_TRACKING_WINDOW = 7  # REDUCED: From 10 to 7 for faster stuck detection
-    MIN_POSITION_VARIANCE = 25.0  # NEW: Minimum variance in position (not distance)
-    STUCK_PENALTY = -0.05  # REDUCED: From -0.1 to -0.05 based on log analysis (32.9% extreme penalties)
+    MIN_POSITION_VARIANCE = 18.0  # HIGH PRIORITY: Reduced from 25.0->20.0->18.0 to reduce stuck rate
+    STUCK_PENALTY = -0.04  # HIGH PRIORITY: Reduced from -0.05 to -0.04 to reduce harsh penalties
     
     # === LIFE MANAGEMENT ===
     LIFE_LOSS_PENALTY = -1.5  # REDUCED: From -2.0 to -1.5 for less harsh punishment
@@ -294,10 +294,10 @@ class AdvancedRewardShaper(gym.Wrapper):
                         prev_variance = np.var([p[0] for p in prev_positions[-(self.POSITION_TRACKING_WINDOW-1):]]) + \
                                       np.var([p[1] for p in prev_positions[-(self.POSITION_TRACKING_WINDOW-1):]])
                         
-                        # ESCAPE DETECTION: Was stuck, now moving
+                        # ESCAPE DETECTION: Was stuck, now moving (HIGH PRIORITY: improved detection)
                         if (prev_variance < self.MIN_POSITION_VARIANCE and 
                             position_variance >= self.MIN_POSITION_VARIANCE):
-                            escape_bonus = 0.5
+                            escape_bonus = 0.4  # HIGH PRIORITY: Reduced from 0.5 to 0.4 to avoid exploitation
                 
                 if position_variance < self.MIN_POSITION_VARIANCE:
                     # Stuck penalty - reduced extreme multiplier
@@ -310,9 +310,9 @@ class AdvancedRewardShaper(gym.Wrapper):
                     if is_powered_up:
                         movement_bonus *= 1.5  # Increased penalty when powered up
                 else:
-                    # Movement reward for good movement - INCREASED cap
-                    movement_reward = min(position_variance / (self.MIN_POSITION_VARIANCE * 1.5), 2.5)  # INCREASED: Cap from 2.0 to 2.5
-                    movement_bonus = movement_reward
+                    # Movement reward for good movement - HIGH PRIORITY: increased multiplier
+                    base_movement_reward = min(position_variance / (self.MIN_POSITION_VARIANCE * 1.5), 2.5)
+                    movement_bonus = base_movement_reward * 1.2  # HIGH PRIORITY: 20% increase in movement reward
                 
                 # Apply escape bonus after base calculation
                 movement_bonus += escape_bonus
