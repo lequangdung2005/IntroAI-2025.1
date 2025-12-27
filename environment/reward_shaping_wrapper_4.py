@@ -161,6 +161,9 @@ class AdvancedRewardShaper(gym.Wrapper):
         obs, reward, terminated, truncated, info = self.env.step(action)
         objects = getattr(self.env, "objects", [])
         
+        # Store base reward for logging purposes
+        info['base_reward'] = reward
+        
         # Update score tracking
         if reward > 0:
             self.steps_without_score = 0

@@ -61,11 +61,16 @@ def make_env_render():
     """Create and wrap the MsPacman environment using OCAtari for rendering"""
     env = OCAtari("ALE/MsPacman-v5",
                   render_mode="rgb_array",
-                  mode="both")  # Changed to 'both' for accurate detection
+                  mode="vision")  # Changed to 'both' for accurate detection
     # Preprocess frames (grayscale 84x84) to match training environment
     env = PreprocessFrame(env, width=84, height=84, force_image=True)
     env = Monitor(env)
     return env
+
+def skip_loading_screen(env, steps=64):
+    """Skip loading screen by performing NOOP actions"""
+    for _ in range(steps):
+        env.step([0])  # NOOP action for vectorized env
 
 def load_model(algorithm, model_path=None):
     """Load a trained model for the specified algorithm"""
@@ -97,7 +102,7 @@ def load_model(algorithm, model_path=None):
 
     return model, env, algo_config['name']
 
-def play_agent(algorithm, model_path=None, num_episodes=5, render=True):
+def play_agent(algorithm, model_path=None, num_episodes=5, render=True, skip_loading=False):
     """Play the agent and optionally render gameplay"""
     print("=" * 60)
     print(f"Playing MsPacman Agent with OCAtari")
@@ -108,6 +113,8 @@ def play_agent(algorithm, model_path=None, num_episodes=5, render=True):
 
     print(f"Algorithm: {algo_name}")
     print(f"Episodes: {num_episodes}")
+    if skip_loading:
+        print("Loading screen skip: ENABLED (64 NOOP steps)")
     print("-" * 60)
 
     if render:
@@ -119,14 +126,27 @@ def play_agent(algorithm, model_path=None, num_episodes=5, render=True):
 
     for episode in range(num_episodes):
         obs = env.reset()
+        
+        # Skip loading screen if enabled
+        if skip_loading:
+            skip_loading_screen(env, 64)
+        
         done = False
         total_reward = 0
         steps = 0
+        prev_lives = None
 
         while not done:
             # Predict action
             action, _states = model.predict(obs, deterministic=True)
             obs, reward, done, info = env.step(action)
+            
+            # Check for life loss and skip loading if enabled
+            if skip_loading and len(info) > 0 and 'lives' in info[0]:
+                current_lives = info[0]['lives']
+                if prev_lives is not None and current_lives < prev_lives:
+                    skip_loading_screen(env, 64)
+                prev_lives = current_lives
 
             total_reward += reward[0]
             steps += 1
@@ -179,7 +199,7 @@ def play_agent(algorithm, model_path=None, num_episodes=5, render=True):
 
     return episode_rewards, episode_lengths
 
-def play_all_models_for_algorithm(algorithm, num_episodes=5, render=False):
+def play_all_models_for_algorithm(algorithm, num_episodes=5, render=False, skip_loading=False):
     """Play all models in the best directory for a specific algorithm"""
     print("=" * 60)
     print(f"Playing All {ALGORITHMS[algorithm]['name']} Models")
@@ -198,7 +218,7 @@ def play_all_models_for_algorithm(algorithm, num_episodes=5, render=False):
         print("-" * 40)
         
         try:
-            rewards, lengths = play_agent(algorithm, model_path, num_episodes, render)
+            rewards, lengths = play_agent(algorithm, model_path, num_episodes, render, skip_loading)
             results[model_name] = {
                 'path': model_path,
                 'rewards': rewards,
@@ -234,7 +254,7 @@ def play_all_models_for_algorithm(algorithm, num_episodes=5, render=False):
     print("=" * 70)
     return results
 
-def play_all_models_all_algorithms(num_episodes=5, render=False):
+def play_all_models_all_algorithms(num_episodes=5, render=False, skip_loading=False):
     """Play all models for all algorithms"""
     print("=" * 60)
     print("Playing All Models for All Algorithms")
@@ -243,7 +263,7 @@ def play_all_models_all_algorithms(num_episodes=5, render=False):
     all_results = {}
     
     for algorithm in ALGORITHMS.keys():
-        all_results[algorithm] = play_all_models_for_algorithm(algorithm, num_episodes, render)
+        all_results[algorithm] = play_all_models_for_algorithm(algorithm, num_episodes, render, skip_loading)
     
     # Print overall comparison
     print(f"\n{'='*80}")
@@ -281,7 +301,7 @@ def play_all_models_all_algorithms(num_episodes=5, render=False):
     print("=" * 80)
     return all_results
 
-def evaluate_all_algorithms(num_episodes=10):
+def evaluate_all_algorithms(num_episodes=10, skip_loading=False):
     """Evaluate all trained algorithms and compare performance (using first model from each best directory)"""
     print("=" * 60)
     print("Evaluating All Algorithms with OCAtari")
@@ -296,7 +316,7 @@ def evaluate_all_algorithms(num_episodes=10):
             print(f"\nEvaluating {ALGORITHMS[algo]['name']}...")
             try:
                 # Use first model from best directory
-                rewards, lengths = play_agent(algo, model_path=best_models[0], num_episodes=num_episodes, render=False)
+                rewards, lengths = play_agent(algo, model_path=best_models[0], num_episodes=num_episodes, render=False, skip_loading=skip_loading)
                 results[algo] = {
                     'name': ALGORITHMS[algo]['name'],
                     'mean_reward': np.mean(rewards),
@@ -351,32 +371,34 @@ if __name__ == "__main__":
                         help='Play all models in best directories for all algorithms')
     parser.add_argument('--play-all-for-algo', type=str, choices=list(ALGORITHMS.keys()),
                         help='Play all models for a specific algorithm')
+    parser.add_argument('--skip-loading', action='store_true',
+                        help='Skip the initial 64 NOOP steps during loading')
 
     args = parser.parse_args()
 
     if args.play_all_models:
         # Play all models for all algorithms
-        play_all_models_all_algorithms(num_episodes=args.episodes, render=not args.no_render)
+        play_all_models_all_algorithms(num_episodes=args.episodes, render=not args.no_render, skip_loading=args.skip_loading)
     elif args.play_all_for_algo:
         # Play all models for specific algorithm
-        play_all_models_for_algorithm(args.play_all_for_algo, num_episodes=args.episodes, render=not args.no_render)
+        play_all_models_for_algorithm(args.play_all_for_algo, num_episodes=args.episodes, render=not args.no_render, skip_loading=args.skip_loading)
     elif args.compare:
         # Compare all algorithms (first model from each)
-        evaluate_all_algorithms(num_episodes=args.episodes)
+        evaluate_all_algorithms(num_episodes=args.episodes, skip_loading=args.skip_loading)
     elif args.algorithm:
         # Play specific algorithm
-        play_agent(args.algorithm, args.model, args.episodes, render=not args.no_render)
+        play_agent(args.algorithm, args.model, args.episodes, render=not args.no_render, skip_loading=args.skip_loading)
     else:
         # Show help if no arguments
         print("Usage:")
         print("  Play specific algorithm:")
         print("    python new_play_all.py -a dqn -e 5")
-        print("    python new_play_all.py -a ppo --model models/ppo/best/best_model.zip")
+        print("    python new_play_all.py -a ppo --model models/ppo/best/best_model.zip --skip-loading")
         print("  Play all models for a specific algorithm:")
-        print("    python new_play_all.py --play-all-for-algo dqn -e 3")
+        print("    python new_play_all.py --play-all-for-algo dqn -e 3 --skip-loading")
         print("  Play all models for all algorithms:")
-        print("    python new_play_all.py --play-all-models -e 3 --no-render")
+        print("    python new_play_all.py --play-all-models -e 3 --no-render --skip-loading")
         print("  Compare all algorithms (first model from each):")
-        print("    python new_play_all.py --compare -e 10")
+        print("    python new_play_all.py --compare -e 10 --skip-loading")
+        print("\nNote: Use --skip-loading for agents trained with wrapper_4.9.9+ (skips 64 NOOP steps)")
         print("\nAvailable algorithms:", list(ALGORITHMS.keys()))
-
