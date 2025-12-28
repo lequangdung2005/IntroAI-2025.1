@@ -5,6 +5,7 @@ PPO: Proximal Policy Optimization - Policy-based method with reward logging
 import gymnasium as gym
 import ale_py
 import numpy as np
+import sys
 import os
 import time
 
@@ -24,6 +25,8 @@ N_ENVS = min(os.cpu_count(), 20)  # Use all available cores (max 20)
 
 # Get project root directory (parent of shaping_reward/)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
+from preprocess import PreprocessFrame
 
 # Tạo thư mục lưu model và log
 os.makedirs(os.path.join(PROJECT_ROOT, "models/ppo"), exist_ok=True)
