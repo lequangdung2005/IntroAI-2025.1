@@ -11,16 +11,13 @@ import time
 from ocatari.core import OCAtari
 from stable_baselines3 import A2C
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
-from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, SubprocVecEnv, VecTransposeImage
+from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTransposeImage
 from stable_baselines3.common.monitor import Monitor
 from preprocess import PreprocessFrame
-from environment.reward_shaping_wrapper_3 import StabilityFixedRewardShaper as RewardShapingWrapper
+from environment.reward_shaping_wrapper_4 import AdvancedRewardShaper as RewardShapingWrapper
 
 # Đăng ký ALE environments
 gym.register_envs(ale_py)
-
-# Get number of CPU cores for parallel environments
-N_ENVS = min(os.cpu_count(), 20)  # Use all available cores (max 20)
 
 # Get project root directory (parent of shaping_reward/)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -34,7 +31,7 @@ os.makedirs(os.path.join(PROJECT_ROOT, "logs/a2c"), exist_ok=True)
 def make_env():
     env = OCAtari("ALE/MsPacman-v5",
                   render_mode="rgb_array",
-                  mode="both")  # Changed to 'both' for accurate detection
+                  mode="vision")  # Changed to 'both' for accurate detection
     env = RewardShapingWrapper(env, enable_logging=True, 
                               log_file=os.path.join(PROJECT_ROOT, "shaping_reward_a2c_log.txt"))
     env = PreprocessFrame(env, width=84, height=84, force_image=True)
@@ -46,12 +43,11 @@ def train_a2c():
     """Train the A2C agent"""
     print("=" * 60)
     print("Training A2C Agent for MsPacman with OCAtari")
-    print(f"Using {N_ENVS} parallel environments with reward shaping")
     print("=" * 60)
     print("Creating environment...")
 
     # Create vectorized environment with parallel subprocesses for faster training
-    env = SubprocVecEnv([make_env for _ in range(N_ENVS)])
+    env = DummyVecEnv([make_env for _ in range(4)])
     env = VecTransposeImage(env)  # Transpose (H,W,C) -> (C,H,W) for CNN
     env = VecFrameStack(env, n_stack=4)
 
@@ -106,7 +102,7 @@ def train_a2c():
 
     # Train the agent
     model.learn(
-        total_timesteps=1000000,
+        total_timesteps=1500000,
         callback=[checkpoint_callback, eval_callback],
         log_interval=10,
         progress_bar=True
