@@ -31,8 +31,8 @@ class GreedyPacmanAgent:
     
     # Priority weights (from reward shaping analysis)
     PRIORITY_SURVIVE = 100.0      # Highest: Don't die
+    PRIORITY_HUNT_GHOST = 1000.0    # Chase ghosts when powered (INCREASED - very rewarding!)
     PRIORITY_POWERPILL = 50.0     # Get power-ups
-    PRIORITY_HUNT_GHOST = 40.0    # Chase ghosts when powered
     PRIORITY_PELLET = 10.0        # Collect pellets
     PRIORITY_EXPLORE = 1.0        # Explore when no clear target
     
@@ -62,10 +62,10 @@ class GreedyPacmanAgent:
         2: (1, 0),    # RIGHT
         3: (-1, 0),   # LEFT
         4: (0, 1),    # DOWN
-        5: (1, -1),   # UPRIGHT
-        6: (-1, -1),  # UPLEFT
-        7: (1, 1),    # DOWNRIGHT
-        8: (-1, 1)    # DOWNLEFT
+        # 5: (1, -1),   # UPRIGHT
+        # 6: (-1, -1),  # UPLEFT
+        # 7: (1, 1),    # DOWNRIGHT
+        # 8: (-1, 1)    # DOWNLEFT
     }
     
     def __init__(self, enable_logging=True, log_interval=100):
@@ -79,6 +79,7 @@ class GreedyPacmanAgent:
         self.position_history = deque(maxlen=10)
         self.last_action = 0
         self.stuck_counter = 0
+        self.consecutive_stuck_steps = 0  # Track how long we've been stuck
         
     def is_powered_up(self, frame):
         """Detect if Pac-Man is powered up (blue ghosts visible)"""
@@ -123,13 +124,14 @@ class GreedyPacmanAgent:
         
         return (dx / distance, dy / distance)
     
-    def find_best_action_for_direction(self, direction, avoid_last_action=False):
+    def find_best_action_for_direction(self, direction, avoid_last_action=False, force_different=False):
         """
         Find the best action to move in a given direction.
         
         Args:
             direction: (dx, dy) normalized direction vector
             avoid_last_action: Try to avoid repeating last action if stuck
+            force_different: Force a completely different action (for severe stuck states)
         """
         dx, dy = direction
         
@@ -143,24 +145,33 @@ class GreedyPacmanAgent:
             # Dot product (how aligned is this action with target direction)
             score = dx * ax + dy * ay
             
-            # Penalize last action if we're stuck
+            # Strong penalty for last action if we're stuck
             if avoid_last_action and action == self.last_action:
-                score -= 0.5
+                score -= 5.0  # Much stronger penalty
+            
+            # Force completely different action when severely stuck
+            if force_different and action == self.last_action:
+                continue  # Skip last action entirely
             
             action_scores.append((action, score))
         
         # Sort by score (highest first)
         action_scores.sort(key=lambda x: x[1], reverse=True)
         
-        # Return best action
+        # Return best action (or second best if forcing different)
         if action_scores:
             return action_scores[0][0]
         return self.ACTIONS['NOOP']
     
-    def find_safe_direction(self, player_pos, ghosts):
+    def find_safe_direction(self, player_pos, ghosts, try_perpendicular=False):
         """
         Find direction away from dangerous ghosts.
         Returns direction vector to move away from nearest ghost.
+        
+        Args:
+            player_pos: Current player position
+            ghosts: List of ghost objects
+            try_perpendicular: If True, try perpendicular direction (for stuck situations)
         """
         if not ghosts:
             return (0, 0)
@@ -179,7 +190,16 @@ class GreedyPacmanAgent:
         if distance == 0:
             return (0, 0)
         
-        return (dx / distance, dy / distance)
+        escape_dx = dx / distance
+        escape_dy = dy / distance
+        
+        # If stuck, try perpendicular direction instead
+        if try_perpendicular:
+            # Rotate 90 degrees: (dx, dy) -> (-dy, dx) or (dy, -dx)
+            # Try the perpendicular direction that moves more
+            return (-escape_dy, escape_dx)
+        
+        return (escape_dx, escape_dy)
     
     def evaluate_targets(self, player_pos, categorized_objects, is_powered):
         """
@@ -216,8 +236,9 @@ class GreedyPacmanAgent:
             for ghost in categorized_objects['ghosts']:
                 distance = self.calculate_distance(player_pos, (ghost.x, ghost.y))
                 
-                # Prioritize closer ghosts
-                priority = self.PRIORITY_HUNT_GHOST * (1.0 - min(distance / 30.0, 1.0))
+                # HIGH BASE PRIORITY for all ghosts when powered
+                # Closer ghosts get bonus priority
+                priority = self.PRIORITY_HUNT_GHOST * (0.5 + 0.5 * (1.0 - min(distance / 50.0, 1.0)))
                 targets.append((ghost, priority, 'hunt_ghost'))
         
         # 4. PELLETS: Default food collection
@@ -238,14 +259,23 @@ class GreedyPacmanAgent:
         self.position_history.append(current_pos)
         
         if len(self.position_history) < 5:
+            self.consecutive_stuck_steps = 0
             return False
         
         # Calculate variance of recent positions
         positions = np.array(list(self.position_history))
         variance = np.var(positions[:, 0]) + np.var(positions[:, 1])
         
-        # Low variance = stuck
-        return variance < 10.0
+        # Low variance = stuck (more sensitive threshold)
+        is_stuck = variance < 15.0
+        
+        # Update consecutive stuck counter
+        if is_stuck:
+            self.consecutive_stuck_steps += 1
+        else:
+            self.consecutive_stuck_steps = 0
+        
+        return is_stuck
     
     def select_action(self, env):
         """
@@ -273,6 +303,14 @@ class GreedyPacmanAgent:
         # Check if powered up
         is_powered = self.is_powered_up(frame) if frame is not None else False
         
+        # Log power-up state changes
+        if not hasattr(self, '_last_powered'):
+            self._last_powered = False
+        if is_powered != self._last_powered:
+            if self.enable_logging:
+                print(f"\n*** POWER STATE CHANGE: {'POWERED UP!' if is_powered else 'Power ended'} ***\n")
+            self._last_powered = is_powered
+        
         # Check if stuck
         is_stuck = self.check_if_stuck(player_pos)
         
@@ -286,26 +324,48 @@ class GreedyPacmanAgent:
             
             if self.enable_logging and self.step_count % self.log_interval == 0:
                 print(f"Step {self.step_count}: Target={target_type}, "
-                      f"Priority={priority:.2f}, Powered={is_powered}, "
+                      f"Priority={priority:.2f}, **POWERED={is_powered}**, "
                       f"Pos=({player_pos[0]:.0f},{player_pos[1]:.0f}), "
-                      f"Stuck={is_stuck}")
+                      f"Stuck={is_stuck} (consecutive={self.consecutive_stuck_steps})")
+            
+            # IMMEDIATE RESPONSE TO STUCK STATE
+            if self.consecutive_stuck_steps >= 3:
+                # Severely stuck - force completely different action
+                if target_type in ['escape_ghost', 'avoid_ghost']:
+                    # Try perpendicular escape when stuck
+                    safe_direction = self.find_safe_direction(player_pos, categorized['ghosts'], 
+                                                             try_perpendicular=True)
+                    action = self.find_best_action_for_direction(safe_direction, 
+                                                                avoid_last_action=True,
+                                                                force_different=True)
+                else:
+                    # For other targets, try random direction to break free
+                    available_actions = [a for a in [1, 2, 3, 4, 5, 6, 7, 8] if a != self.last_action]
+                    action = np.random.choice(available_actions) if available_actions else np.random.choice([1, 2, 3, 4])
+                    
+                if self.enable_logging:
+                    print(f"  -> FORCING action change due to stuck! Action={action}")
             
             # Handle escape/avoidance separately
-            if target_type in ['escape_ghost', 'avoid_ghost']:
+            elif target_type in ['escape_ghost', 'avoid_ghost']:
                 # Move away from ghost
-                safe_direction = self.find_safe_direction(player_pos, categorized['ghosts'])
+                safe_direction = self.find_safe_direction(player_pos, categorized['ghosts'],
+                                                         try_perpendicular=(self.consecutive_stuck_steps > 0))
                 action = self.find_best_action_for_direction(safe_direction, 
-                                                            avoid_last_action=is_stuck)
+                                                            avoid_last_action=is_stuck,
+                                                            force_different=(self.consecutive_stuck_steps >= 2))
             else:
                 # Move toward target
                 direction = self.get_direction_to_target(player_pos, target_pos)
                 action = self.find_best_action_for_direction(direction, 
-                                                            avoid_last_action=is_stuck)
+                                                            avoid_last_action=is_stuck,
+                                                            force_different=(self.consecutive_stuck_steps >= 2))
         else:
             # No clear target - explore
-            if is_stuck:
-                # Try a random action to get unstuck
-                action = np.random.choice([1, 2, 3, 4])  # Random cardinal direction
+            if is_stuck or self.consecutive_stuck_steps > 0:
+                # Try a different action to get unstuck - exclude last action
+                available_actions = [a for a in [1, 2, 3, 4] if a != self.last_action]
+                action = np.random.choice(available_actions) if available_actions else np.random.choice([1, 2, 3, 4])
             else:
                 # Continue last action or move right (default)
                 action = self.last_action if self.last_action != 0 else self.ACTIONS['RIGHT']
@@ -340,6 +400,7 @@ class GreedyPacmanAgent:
         self.position_history.clear()
         self.last_action = 0
         self.stuck_counter = 0
+        self.consecutive_stuck_steps = 0
         
         print(f"\n{'='*60}")
         print(f"Starting Episode {self.episode_count + 1}")
@@ -413,8 +474,8 @@ def test_greedy_agent(n_episodes=5, render=False):
     
     # Create environment - always use rgb_array mode
     env = OCAtari("ALE/MsPacman-v5",
-                  render_mode="rgb_array",
-                  mode="both")  # Use 'both' mode for accurate object detection
+                  render_mode="human",
+                  mode="vision")  # Use 'both' mode for accurate object detection
     
     # Create agent
     agent = GreedyPacmanAgent(enable_logging=True, log_interval=100)
