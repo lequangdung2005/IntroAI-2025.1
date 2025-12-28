@@ -9,7 +9,8 @@ import numpy as np
 import sys
 import os
 import time
-
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
 from ocatari.core import OCAtari
 try:
     from sb3_contrib import QRDQN  # Quantile Regression DQN (closest to Rainbow in SB3)
@@ -28,10 +29,6 @@ from environment.reward_shaping_wrapper_4 import AdvancedRewardShaper as RewardS
 # Đăng ký ALE environments
 gym.register_envs(ale_py)
 
-# Get project root directory (parent of shaping_reward/)
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, PROJECT_ROOT)
-from preprocess import PreprocessFrame
 # Tạo thư mục lưu model và log
 os.makedirs(os.path.join(PROJECT_ROOT, "models/rainbow"), exist_ok=True)
 os.makedirs(os.path.join(PROJECT_ROOT, "logs/rainbow"), exist_ok=True)
