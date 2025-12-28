@@ -8,21 +8,18 @@ import numpy as np
 import sys
 import os
 import time
-
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
 from ocatari.core import OCAtari
 from stable_baselines3 import A2C
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, VecTransposeImage
 from stable_baselines3.common.monitor import Monitor
 from environment.reward_shaping_wrapper_4 import AdvancedRewardShaper as RewardShapingWrapper
-
+from preprocess import PreprocessFrame
 # Đăng ký ALE environments
 gym.register_envs(ale_py)
 
-# Get project root directory (parent of shaping_reward/)
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, PROJECT_ROOT)
-from preprocess import PreprocessFrame
 # Tạo thư mục lưu model và log
 os.makedirs(os.path.join(PROJECT_ROOT, "models/a2c"), exist_ok=True)
 os.makedirs(os.path.join(PROJECT_ROOT, "logs/a2c"), exist_ok=True)
