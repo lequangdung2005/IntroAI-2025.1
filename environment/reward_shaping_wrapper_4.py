@@ -86,10 +86,6 @@ class AdvancedRewardShaper(gym.Wrapper):
         """Reset environment and skip loading screen"""
         obs, info = self.env.reset(**kwargs)
         
-        # SKIP 64 NOOP steps at game start (loading screen)
-        for i in range(64):
-            obs, _, _, _, info = self.env.step(0)  # NOOP action, not saved to replay buffer
-        
         # Reset all tracking AFTER loading skip
         self.steps_without_score = 0
         self.position_history = []
@@ -358,10 +354,6 @@ class AdvancedRewardShaper(gym.Wrapper):
                 if current_lives < self.prev_lives:
                     shaped_reward += self.LIFE_LOSS_PENALTY
                     info['life_lost'] = True
-                    
-                    # SKIP 64 NOOP steps after life loss (loading screen)
-                    for i in range(64):
-                        obs, _, _, _, info = self.env.step(0)  # NOOP action, not saved to replay buffer
                     
                     # Reset some tracking after life loss
                     self.position_history = []
